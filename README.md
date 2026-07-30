@@ -1,4 +1,4 @@
-# miniled
+# rgb-node
 
 3-channel PWM RGB LED driver firmware for the ESP32-C3 Super Mini.
 
@@ -10,8 +10,8 @@
 ## Quickstart
 
 ```sh
-git clone <repo-url> miniled
-cd miniled
+git clone <repo-url> rgb-node
+cd rgb-node
 make setup     # one-time: installs PlatformIO via uv
 make flash     # builds and uploads over USB
 make monitor   # watch serial output (Ctrl+C to exit)
@@ -24,6 +24,8 @@ The stock firmware slowly cycles the hue across the R/G/B pins (GPIO 5/6/7 by de
 ## Brightness pot
 
 Overall brightness is set by a potentiometer: outer legs to 3V3 and GND, wiper to **GPIO1**. Any value from ~10 kΩ up is fine. With nothing connected the pin floats and brightness will be arbitrary. The pin must be one of GPIO 0–4 — those are the only usable ADC inputs on the ESP32-C3 (GPIO5's ADC2 is broken by chip erratum, and pins like 20/21 are UART with no ADC at all).
+
+No pot wired up? Build without it by uncommenting `-DRGBNODE_BRIGHTNESS_POT=0` in `platformio.ini`'s `build_flags` — brightness is then fixed at max and the ADC is left untouched.
 
 ## Make targets
 

@@ -12,6 +12,12 @@ constexpr uint8_t kPinRed = 5;
 constexpr uint8_t kPinGreen = 6;
 constexpr uint8_t kPinBlue = 7;
 
+// Set -DRGBNODE_BRIGHTNESS_POT=0 in platformio.ini build_flags to build
+// without the pot; brightness is then fixed at max and the ADC untouched.
+#ifndef RGBNODE_BRIGHTNESS_POT
+#define RGBNODE_BRIGHTNESS_POT 1
+#endif
+
 // Brightness potentiometer wiper (ends to 3V3 and GND). Must be an
 // ADC1 pin — on the C3 that's GPIO 0–4 only; GPIO21 has no ADC (it's
 // UART0 TX).

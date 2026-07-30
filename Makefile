@@ -3,7 +3,7 @@ PIO := pio
 .DEFAULT_GOAL := help
 
 help:
-	@echo "miniled — ESP32-C3 Super Mini RGB LED driver"
+	@echo "rgb-node — ESP32-C3 Super Mini RGB LED driver"
 	@echo ""
 	@echo "  make setup     install PlatformIO with uv (one-time)"
 	@echo "  make build     compile the firmware"

@@ -21,6 +21,7 @@ static void hueToRgb(uint8_t h, uint8_t &r, uint8_t &g, uint8_t &b) {
   }
 }
 
+#if RGBNODE_BRIGHTNESS_POT
 // Pot reading as a 0–255 scale factor. EMA-smoothed so ADC noise doesn't
 // flicker the LEDs; squared so the knob feels perceptually linear.
 static uint8_t readBrightness() {
@@ -29,10 +30,15 @@ static uint8_t readBrightness() {
   const uint32_t b = filtered >> 4;  // 12-bit ADC -> 0–255
   return (b * b) / 255;
 }
+#else
+static uint8_t readBrightness() { return 255; }
+#endif
 
 void setup() {
   Serial.begin(115200);
+#if RGBNODE_BRIGHTNESS_POT
   analogReadResolution(12);
+#endif
 
   ledcAttach(config::kPinRed, config::kPwmFreqHz, config::kPwmResolutionBits);
   ledcAttach(config::kPinGreen, config::kPwmFreqHz, config::kPwmResolutionBits);
