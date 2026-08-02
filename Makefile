@@ -9,6 +9,7 @@ help:
 	@echo "  make build-web  compile the React web application"
 	@echo "  make build      compile the firmware"
 	@echo "  make flash      build and upload firmware over USB"
+	@echo "  make ota        flash firmware wirelessly over Wi-Fi (OTA)"
 	@echo "  make upload-fs  upload LittleFS static web UI to ESP32"
 	@echo "  make release    build and package binaries to releases/v0.01/"
 	@echo "  make monitor    open the serial monitor (Ctrl+C to exit)"
@@ -30,6 +31,9 @@ build:
 flash:
 	$(PIO) run -t upload
 
+ota:
+	$(PIO) run -e esp32c3-supermini-ota -t upload
+
 upload-fs: build-web
 	$(PIO) run -t uploadfs
 
@@ -47,4 +51,4 @@ monitor:
 clean:
 	$(PIO) run -t clean
 
-.PHONY: help setup build-web build flash upload-fs release monitor clean
+.PHONY: help setup build-web build flash ota upload-fs release monitor clean

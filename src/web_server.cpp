@@ -2,10 +2,12 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <ArduinoOTA.h>
 #include <AsyncJson.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
 #include <LittleFS.h>
+#include <Update.h>
 #include <WiFi.h>
 #include <WiFiMulti.h>
 
@@ -83,7 +85,6 @@ void init(StateCallback onStateChange, const LightState &initialState) {
   g_stateCallback = onStateChange;
   g_state = initialState;
 
-  // Mount LittleFS filesystem
   if (!LittleFS.begin(true)) {
     Serial.println("An Error has occurred while mounting LittleFS");
   } else {
@@ -138,12 +139,29 @@ void init(StateCallback onStateChange, const LightState &initialState) {
     Serial.printf("mDNS responder started! Access at http://%s.local/\n", config::kHostname);
   }
 
+  // Setup ArduinoOTA for CLI wireless uploads
+  ArduinoOTA.setHostname(config::kHostname);
+  ArduinoOTA.onStart([]() {
+    String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
+    Serial.println("ArduinoOTA Start: " + type);
+  });
+  ArduinoOTA.onEnd([]() { Serial.println("\nArduinoOTA End"); });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("ArduinoOTA Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("ArduinoOTA Error[%u]\n", error);
+  });
+  ArduinoOTA.begin();
+  Serial.println("ArduinoOTA listener active");
+
   ws.onEvent(onEvent);
   server.addHandler(&ws);
 
   // GET /api/status
   server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
     JsonDocument doc;
+    doc["version"] = "1.0.1-ota";
     doc["power"] = g_state.power;
     doc["r"] = g_state.r;
     doc["g"] = g_state.g;
@@ -184,6 +202,46 @@ void init(StateCallback onStateChange, const LightState &initialState) {
       });
   server.addHandler(handler);
 
+  // POST /update Web UI Drag-and-Drop OTA Upload
+  server.on(
+      "/update", HTTP_POST,
+      [](AsyncWebServerRequest *request) {
+        bool shouldReboot = !Update.hasError();
+        AsyncWebServerResponse *response = request->beginResponse(
+            200, "text/plain", shouldReboot ? "OK" : "FAIL");
+        response->addHeader("Connection", "close");
+        request->send(response);
+        if (shouldReboot) {
+          delay(500);
+          ESP.restart();
+        }
+      },
+      [](AsyncWebServerRequest *request, String filename, size_t index,
+         uint8_t *data, size_t len, bool final) {
+        if (!index) {
+          Serial.printf("HTTP OTA Update Start: %s\n", filename.c_str());
+          int command = U_FLASH;
+          if (filename.indexOf("littlefs") >= 0 || filename.indexOf("spiffs") >= 0) {
+            command = U_SPIFFS;
+          }
+          if (!Update.begin(UPDATE_SIZE_UNKNOWN, command)) {
+            Update.printError(Serial);
+          }
+        }
+        if (!Update.hasError()) {
+          if (Update.write(data, len) != len) {
+            Update.printError(Serial);
+          }
+        }
+        if (final) {
+          if (Update.end(true)) {
+            Serial.printf("HTTP OTA Update Success: %u B\n", index + len);
+          } else {
+            Update.printError(Serial);
+          }
+        }
+      });
+
   server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
 
   server.onNotFound([](AsyncWebServerRequest *request) {
@@ -203,6 +261,7 @@ void init(StateCallback onStateChange, const LightState &initialState) {
 
 void loop() {
   ws.cleanupClients();
+  ArduinoOTA.handle();
   if (g_usingStaMode) {
     wifiMulti.run();
   }

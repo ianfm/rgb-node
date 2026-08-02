@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Power, Sliders, Settings, X, Wifi, Cpu, Activity } from 'lucide-react';
+import { Power, Sliders, Settings, X, Wifi, Cpu, Activity, Upload, CheckCircle, AlertCircle } from 'lucide-react';
 
 const PRESET_SWATCHES = [
   { name: 'Warm White', r: 255, g: 241, b: 224 },
@@ -34,6 +34,9 @@ export default function App() {
   const [wsConnected, setWsConnected] = useState(false);
   const [activeTab, setActiveTab] = useState('main'); // 'main' or 'advanced'
   const [deviceInfo, setDeviceInfo] = useState({ ip: '...', ssid: '...', mode: '...' });
+  const [otaFile, setOtaFile] = useState(null);
+  const [otaProgress, setOtaProgress] = useState(0);
+  const [otaStatus, setOtaStatus] = useState(''); // 'uploading', 'success', 'error'
   const wsRef = useRef(null);
   const canvasRef = useRef(null);
 
@@ -44,8 +47,6 @@ export default function App() {
       wsUrl = `ws://rgb-node.local/ws`;
     }
     connectWs(wsUrl);
-
-    // Fetch initial /api/status info
     fetchStatus();
 
     return () => {
@@ -102,6 +103,37 @@ export default function App() {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(newState));
     }
+  };
+
+  const handleOtaUpload = () => {
+    if (!otaFile) return;
+    setOtaStatus('uploading');
+    setOtaProgress(0);
+
+    const formData = new FormData();
+    formData.append('update', otaFile);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/update', true);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const percent = Math.round((e.loaded / e.total) * 100);
+        setOtaProgress(percent);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        setOtaStatus('success');
+        setTimeout(() => window.location.reload(), 5000);
+      } else {
+        setOtaStatus('error');
+      }
+    };
+
+    xhr.onerror = () => setOtaStatus('error');
+    xhr.send(formData);
   };
 
   // Draw Color Wheel Canvas
@@ -353,6 +385,54 @@ export default function App() {
               </div>
             </div>
 
+            {/* OTA Wireless Update Card */}
+            <div className="instrument-card">
+              <div className="card-title">
+                <span>Wireless OTA Update</span>
+                <Upload size={16} color="#94a3b8" />
+              </div>
+              <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
+                Upload compiled <code style={{ color: 'var(--color-text-primary)' }}>firmware.bin</code> or <code style={{ color: 'var(--color-text-primary)' }}>littlefs.bin</code> binary file.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <input
+                  type="file"
+                  accept=".bin"
+                  onChange={(e) => setOtaFile(e.target.files[0])}
+                  style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}
+                />
+                <button
+                  className="effect-btn active"
+                  onClick={handleOtaUpload}
+                  disabled={!otaFile || otaStatus === 'uploading'}
+                  style={{ cursor: otaFile ? 'pointer' : 'not-allowed', padding: '10px' }}
+                >
+                  {otaStatus === 'uploading' ? `Uploading (${otaProgress}%)...` : 'Flash OTA Update'}
+                </button>
+
+                {otaStatus === 'uploading' && (
+                  <div className="slider-group">
+                    <input type="range" min="0" max="100" value={otaProgress} readOnly />
+                  </div>
+                )}
+
+                {otaStatus === 'success' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-success)', fontSize: '13px' }}>
+                    <CheckCircle size={16} />
+                    <span>Update complete! Rebooting device in 5s...</span>
+                  </div>
+                )}
+
+                {otaStatus === 'error' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-danger)', fontSize: '13px' }}>
+                    <AlertCircle size={16} />
+                    <span>OTA update failed. Check connection and file binary.</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="instrument-card">
               <div className="card-title">Gamma Calibration</div>
               <div className="slider-group">
@@ -361,7 +441,7 @@ export default function App() {
                   <span className="slider-value">2.8 (Fixed)</span>
                 </div>
                 <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                  Perceptual gamma curve is active across all 3 PWM channels.
+                  12-bit perceptual gamma curve active across all 3 PWM channels.
                 </p>
               </div>
             </div>
