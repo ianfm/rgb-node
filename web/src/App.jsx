@@ -18,6 +18,11 @@ const EFFECTS = [
   { id: 'breathe', label: 'Breathe' },
   { id: 'candle', label: 'Candle Flicker' },
   { id: 'strobe', label: 'Strobe' },
+  { id: 'music_spectrum', label: '🎵 Music: Spectrum' },
+  { id: 'music_pulse', label: '🎵 Music: Beat Pulse' },
+  { id: 'music_amplitude', label: '🎵 Music: Amplitude' },
+  { id: 'music_freq_hue', label: '🎵 Music: Pitch-to-Hue' },
+  { id: 'music_chill', label: '🎵 Music: Ambient Chill' },
 ];
 
 export default function App() {
@@ -29,6 +34,7 @@ export default function App() {
     brightness: 255,
     effect: 'static',
     speed: 50,
+    musicSensitivity: 50,
   });
 
   const [wsConnected, setWsConnected] = useState(false);
@@ -69,6 +75,7 @@ export default function App() {
           brightness: data.brightness ?? prev.brightness,
           effect: data.effect ?? prev.effect,
           speed: data.speed ?? prev.speed,
+          musicSensitivity: data.musicSensitivity ?? prev.musicSensitivity,
         }));
       }
     } catch (e) {
@@ -345,6 +352,22 @@ export default function App() {
                 max="100"
                 value={state.speed}
                 onChange={(e) => updateState({ speed: parseInt(e.target.value) })}
+              />
+            </div>
+          )}
+
+          {state.effect.startsWith('music_') && (
+            <div className="slider-group" style={{ marginTop: '16px' }}>
+              <div className="slider-header">
+                <span>Microphone Gain / Sensitivity</span>
+                <span className="slider-value">{state.musicSensitivity}%</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="100"
+                value={state.musicSensitivity}
+                onChange={(e) => updateState({ musicSensitivity: parseInt(e.target.value) })}
               />
             </div>
           )}

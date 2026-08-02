@@ -27,6 +27,12 @@ constexpr uint8_t kPinBlue = 7;
 // UART0 TX).
 constexpr uint8_t kPinBrightness = 1;
 
+// I2S INMP441 Digital Microphone Pins (GPIO 2, 3, 4)
+constexpr uint8_t kPinI2sBclk = 2;
+constexpr uint8_t kPinI2sWs = 3;
+constexpr uint8_t kPinI2sDin = 4;
+constexpr uint32_t kAudioSampleRate = 16000;
+
 constexpr uint32_t kPwmFreqHz = 5000;
 constexpr uint8_t kPwmResolutionBits = 12;  // duty range 0–4095 (12-bit)
 constexpr uint16_t kPwmMaxDuty = (1 << kPwmResolutionBits) - 1;  // 4095

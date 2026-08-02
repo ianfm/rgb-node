@@ -1,10 +1,11 @@
 // 3-channel PWM RGB LED driver for ESP32-C3 Super Mini
-// Includes Web Server, WebSockets, NVS State Persistence, 12-Bit PWM, Gamma 2.8, and Dynamic Effects.
+// Includes Web Server, WebSockets, NVS State Persistence, 12-Bit PWM, Gamma 2.8, Dynamic Effects, and INMP441 I2S Music Sync.
 
 #include <Arduino.h>
 #include <Preferences.h>
 #include <cmath>
 
+#include "audio_dsp.h"
 #include "config.h"
 #include "web_server.h"
 
@@ -28,6 +29,7 @@ static void saveStateToNvs() {
   preferences.putUChar("brightness", g_state.brightness);
   preferences.putString("effect", g_state.effect);
   preferences.putUChar("speed", g_state.speed);
+  preferences.putUChar("musicSens", g_state.musicSensitivity);
   preferences.end();
 }
 
@@ -41,6 +43,7 @@ static void loadStateFromNvs() {
   g_state.brightness = preferences.getUChar("brightness", 255);
   g_state.effect = preferences.getString("effect", "static");
   g_state.speed = preferences.getUChar("speed", 50);
+  g_state.musicSensitivity = preferences.getUChar("musicSens", 50);
   preferences.end();
 }
 
@@ -88,6 +91,8 @@ void setup() {
 
   loadStateFromNvs();
 
+  audio_dsp::init(config::kPinI2sBclk, config::kPinI2sWs, config::kPinI2sDin);
+
   web_server::init(
       [](const web_server::LightState &newState) {
         g_state = newState;
@@ -112,6 +117,10 @@ void loop() {
   static float breathePhase = 0.0f;
   static bool strobeState = false;
   static float strobeTimer = 0.0f;
+  static float pulseDecay = 0.0f;
+
+  audio_dsp::setSensitivity(g_state.musicSensitivity);
+  audio_dsp::AudioBands bands = audio_dsp::getBands();
 
   float targetR = g_state.r / 255.0f;
   float targetG = g_state.g / 255.0f;
@@ -119,7 +128,6 @@ void loop() {
 
   if (g_state.power) {
     if (g_state.effect == "hue_cycle") {
-      // Speed 1 -> 0.02 Hz (50s full cycle), Speed 100 -> 0.5 Hz (2s full cycle)
       const float cycleFreqHz = 0.02f + (g_state.speed - 1) * (0.48f / 99.0f);
       animHue += deltaSec * cycleFreqHz;
       if (animHue >= 1.0f) animHue -= 1.0f;
@@ -158,6 +166,43 @@ void loop() {
         targetG = 0.0f;
         targetB = 0.0f;
       }
+    } else if (g_state.effect == "music_spectrum") {
+      targetR = bands.bass;
+      targetG = bands.mid;
+      targetB = bands.treble;
+    } else if (g_state.effect == "music_pulse") {
+      const float cycleFreqHz = 0.02f + (g_state.speed - 1) * (0.48f / 99.0f);
+      animHue += deltaSec * cycleFreqHz;
+      if (animHue >= 1.0f) animHue -= 1.0f;
+      hueToRgbFloat(animHue, targetR, targetG, targetB);
+
+      if (bands.beat) {
+        pulseDecay = 1.0f;
+      } else {
+        pulseDecay = fmaxf(0.05f, pulseDecay * 0.88f);
+      }
+      targetR *= pulseDecay;
+      targetG *= pulseDecay;
+      targetB *= pulseDecay;
+    } else if (g_state.effect == "music_amplitude") {
+      targetR *= bands.totalAmp;
+      targetG *= bands.totalAmp;
+      targetB *= bands.totalAmp;
+    } else if (g_state.effect == "music_freq_hue") {
+      hueToRgbFloat(bands.dominantHue, targetR, targetG, targetB);
+      targetR *= bands.totalAmp;
+      targetG *= bands.totalAmp;
+      targetB *= bands.totalAmp;
+    } else if (g_state.effect == "music_chill") {
+      float spectR = bands.bass;
+      float spectG = bands.mid;
+      float spectB = bands.treble;
+      targetR = targetR * 0.4f + spectR * 0.6f;
+      targetG = targetG * 0.4f + spectG * 0.6f;
+      targetB = targetB * 0.4f + spectB * 0.6f;
+      targetR *= (0.3f + 0.7f * bands.totalAmp);
+      targetG *= (0.3f + 0.7f * bands.totalAmp);
+      targetB *= (0.3f + 0.7f * bands.totalAmp);
     }
   } else {
     targetR = 0.0f;

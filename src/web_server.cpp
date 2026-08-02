@@ -31,6 +31,7 @@ static String serializeStateJson(const LightState &st) {
   doc["brightness"] = st.brightness;
   doc["effect"] = st.effect;
   doc["speed"] = st.speed;
+  doc["musicSensitivity"] = st.musicSensitivity;
   String out;
   serializeJson(doc, out);
   return out;
@@ -51,6 +52,7 @@ static void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
         if (!doc["brightness"].isNull()) g_state.brightness = doc["brightness"].as<uint8_t>();
         if (!doc["effect"].isNull()) g_state.effect = doc["effect"].as<String>();
         if (!doc["speed"].isNull()) g_state.speed = doc["speed"].as<uint8_t>();
+        if (!doc["musicSensitivity"].isNull()) g_state.musicSensitivity = doc["musicSensitivity"].as<uint8_t>();
 
         if (g_stateCallback) {
           g_stateCallback(g_state);
@@ -169,6 +171,7 @@ void init(StateCallback onStateChange, const LightState &initialState) {
     doc["brightness"] = g_state.brightness;
     doc["effect"] = g_state.effect;
     doc["speed"] = g_state.speed;
+    doc["musicSensitivity"] = g_state.musicSensitivity;
     doc["ip"] = (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString()
                                                 : WiFi.softAPIP().toString();
     doc["ssid"] = (WiFi.status() == WL_CONNECTED) ? WiFi.SSID() : config::kApSsid;
@@ -190,6 +193,7 @@ void init(StateCallback onStateChange, const LightState &initialState) {
           if (!doc["brightness"].isNull()) g_state.brightness = doc["brightness"].as<uint8_t>();
           if (!doc["effect"].isNull()) g_state.effect = doc["effect"].as<String>();
           if (!doc["speed"].isNull()) g_state.speed = doc["speed"].as<uint8_t>();
+          if (!doc["musicSensitivity"].isNull()) g_state.musicSensitivity = doc["musicSensitivity"].as<uint8_t>();
 
           if (g_stateCallback) {
             g_stateCallback(g_state);

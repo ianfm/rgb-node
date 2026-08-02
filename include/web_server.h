@@ -12,8 +12,9 @@ struct LightState {
   uint8_t g = 240;
   uint8_t b = 255;
   uint8_t brightness = 255;
-  String effect = "static";  // "static", "hue_cycle", "breathe", "candle", "strobe"
+  String effect = "static";  // "static", "hue_cycle", "breathe", "candle", "strobe", "music_spectrum", "music_pulse", "music_amplitude", "music_freq_hue", "music_chill"
   uint8_t speed = 50;        // 1..100
+  uint8_t musicSensitivity = 50; // 1..100
 };
 
 using StateCallback = std::function<void(const LightState &state)>;
