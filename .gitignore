@@ -1,2 +1,5 @@
 .pio/
 .vscode/
+include/secrets.h
+web/node_modules/
+web/dist/
