@@ -1,20 +1,31 @@
 #pragma once
 
+#include <Arduino.h>
 #include <cstdint>
 #include <functional>
 
 namespace web_server {
 
-using ColorCallback = std::function<void(uint8_t r, uint8_t g, uint8_t b)>;
+struct LightState {
+  bool power = true;
+  uint8_t r = 0;
+  uint8_t g = 240;
+  uint8_t b = 255;
+  uint8_t brightness = 255;
+  String effect = "static";  // "static", "hue_cycle", "breathe", "candle", "strobe"
+  uint8_t speed = 50;        // 1..100
+};
+
+using StateCallback = std::function<void(const LightState &state)>;
 
 // Initialize Wi-Fi, LittleFS static web server, REST API, and WebSockets.
-// Pass a callback function that receives updated RGB values.
-void init(ColorCallback onColorChange);
+// Pass a callback function that receives updated LightState.
+void init(StateCallback onStateChange, const LightState &initialState);
 
 // Periodically clean up WebSocket clients and handle background events.
 void loop();
 
-// Broadcast current RGB color state to all connected web clients.
-void broadcastState(uint8_t r, uint8_t g, uint8_t b);
+// Broadcast current LightState to all connected web clients.
+void broadcastState(const LightState &state);
 
 }  // namespace web_server

@@ -16,41 +16,44 @@ namespace web_server {
 static AsyncWebServer server(config::kHttpPort);
 static AsyncWebSocket ws("/ws");
 static WiFiMulti wifiMulti;
-static ColorCallback g_colorCallback = nullptr;
-static uint8_t g_currentR = 0;
-static uint8_t g_currentG = 0;
-static uint8_t g_currentB = 0;
+static StateCallback g_stateCallback = nullptr;
+static LightState g_state;
 static bool g_usingStaMode = false;
+
+static String serializeStateJson(const LightState &st) {
+  JsonDocument doc;
+  doc["power"] = st.power;
+  doc["r"] = st.r;
+  doc["g"] = st.g;
+  doc["b"] = st.b;
+  doc["brightness"] = st.brightness;
+  doc["effect"] = st.effect;
+  doc["speed"] = st.speed;
+  String out;
+  serializeJson(doc, out);
+  return out;
+}
 
 static void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
   AwsFrameInfo *info = (AwsFrameInfo *)arg;
   if (info->final && info->index == 0 && info->len == len) {
     data[len] = 0;
-    // Check if message is JSON e.g. {"r":255,"g":0,"b":128} or binary "0,255,0,128"
     if (data[0] == '{') {
       JsonDocument doc;
       DeserializationError err = deserializeJson(doc, (char *)data);
       if (!err) {
-        uint8_t r = doc["r"] | 0;
-        uint8_t g = doc["g"] | 0;
-        uint8_t b = doc["b"] | 0;
-        g_currentR = r;
-        g_currentG = g;
-        g_currentB = b;
-        if (g_colorCallback) {
-          g_colorCallback(r, g, b);
+        if (!doc["power"].isNull()) g_state.power = doc["power"].as<bool>();
+        if (!doc["r"].isNull()) g_state.r = doc["r"].as<uint8_t>();
+        if (!doc["g"].isNull()) g_state.g = doc["g"].as<uint8_t>();
+        if (!doc["b"].isNull()) g_state.b = doc["b"].as<uint8_t>();
+        if (!doc["brightness"].isNull()) g_state.brightness = doc["brightness"].as<uint8_t>();
+        if (!doc["effect"].isNull()) g_state.effect = doc["effect"].as<String>();
+        if (!doc["speed"].isNull()) g_state.speed = doc["speed"].as<uint8_t>();
+
+        if (g_stateCallback) {
+          g_stateCallback(g_state);
         }
-      }
-    } else {
-      // Legacy format "<stripIndex>,<R>,<G>,<B>"
-      int stripIdx = 0, r = 0, g = 0, b = 0;
-      if (sscanf((char *)data, "%d,%d,%d,%d", &stripIdx, &r, &g, &b) >= 4) {
-        g_currentR = (uint8_t)r;
-        g_currentG = (uint8_t)g;
-        g_currentB = (uint8_t)b;
-        if (g_colorCallback) {
-          g_colorCallback(g_currentR, g_currentG, g_currentB);
-        }
+        broadcastState(g_state);
       }
     }
   }
@@ -62,8 +65,7 @@ static void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
     case WS_EVT_CONNECT:
       Serial.printf("WebSocket client #%u connected from %s\n", client->id(),
                     client->remoteIP().toString().c_str());
-      // Send current state to newly connected client
-      broadcastState(g_currentR, g_currentG, g_currentB);
+      client->text(serializeStateJson(g_state));
       break;
     case WS_EVT_DISCONNECT:
       Serial.printf("WebSocket client #%u disconnected\n", client->id());
@@ -77,8 +79,9 @@ static void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
   }
 }
 
-void init(ColorCallback onColorChange) {
-  g_colorCallback = onColorChange;
+void init(StateCallback onStateChange, const LightState &initialState) {
+  g_stateCallback = onStateChange;
+  g_state = initialState;
 
   // Mount LittleFS filesystem
   if (!LittleFS.begin(true)) {
@@ -92,7 +95,6 @@ void init(ColorCallback onColorChange) {
 
   int configuredNetworks = 0;
 
-  // Register primary Wi-Fi network if configured
   if (strlen(config::kWifiSsid) > 0 &&
       strcmp(config::kWifiSsid, "Your_WiFi_SSID") != 0 &&
       strcmp(config::kWifiSsid, "Your_Primary_WiFi_SSID") != 0) {
@@ -101,7 +103,6 @@ void init(ColorCallback onColorChange) {
     Serial.printf("Added Wi-Fi Network #1: %s\n", config::kWifiSsid);
   }
 
-  // Register secondary Wi-Fi network if configured
   if (strlen(config::kWifiSsid2) > 0 &&
       strcmp(config::kWifiSsid2, "Your_Secondary_WiFi_SSID") != 0) {
     wifiMulti.addAP(config::kWifiSsid2, config::kWifiPass2);
@@ -110,7 +111,7 @@ void init(ColorCallback onColorChange) {
   }
 
   if (configuredNetworks > 0) {
-    Serial.println("Scanning and connecting to strongest Wi-Fi network...");
+    Serial.println("Scanning and connecting to Wi-Fi network...");
     uint8_t attempts = 0;
     while (wifiMulti.run() != WL_CONNECTED && attempts < 25) {
       delay(500);
@@ -126,63 +127,65 @@ void init(ColorCallback onColorChange) {
                   WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
   } else {
     g_usingStaMode = false;
-    Serial.println("Could not connect to any configured Wi-Fi networks.");
-    Serial.println("Starting Access Point (SoftAP)...");
+    Serial.println("Could not connect to configured Wi-Fi. Starting AP mode...");
     WiFi.mode(WIFI_AP);
     WiFi.softAP(config::kApSsid, config::kApPass);
-    Serial.printf("Access Point started! AP IP address: %s\n",
+    Serial.printf("Access Point started! AP IP: %s\n",
                   WiFi.softAPIP().toString().c_str());
   }
 
-  // Start mDNS responder (http://rgb-node.local)
   if (MDNS.begin(config::kHostname)) {
     Serial.printf("mDNS responder started! Access at http://%s.local/\n", config::kHostname);
   }
 
-  // Setup WebSocket
   ws.onEvent(onEvent);
   server.addHandler(&ws);
 
-  // REST API: GET /api/status
+  // GET /api/status
   server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
     JsonDocument doc;
-    doc["r"] = g_currentR;
-    doc["g"] = g_currentG;
-    doc["b"] = g_currentB;
+    doc["power"] = g_state.power;
+    doc["r"] = g_state.r;
+    doc["g"] = g_state.g;
+    doc["b"] = g_state.b;
+    doc["brightness"] = g_state.brightness;
+    doc["effect"] = g_state.effect;
+    doc["speed"] = g_state.speed;
     doc["ip"] = (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString()
                                                 : WiFi.softAPIP().toString();
     doc["ssid"] = (WiFi.status() == WL_CONNECTED) ? WiFi.SSID() : config::kApSsid;
     doc["mode"] = (WiFi.status() == WL_CONNECTED) ? "STA" : "AP";
-    String response;
-    serializeJson(doc, response);
-    request->send(200, "application/json", response);
+    String out;
+    serializeJson(doc, out);
+    request->send(200, "application/json", out);
   });
 
-  // REST API: POST /api/rgb
+  // POST /api/state
   AsyncCallbackJsonWebHandler *handler = new AsyncCallbackJsonWebHandler(
-      "/api/rgb", [](AsyncWebServerRequest *request, JsonVariant &json) {
-        JsonObject jsonObj = json.as<JsonObject>();
-        if (!jsonObj["r"].isNull() && !jsonObj["g"].isNull() &&
-            !jsonObj["b"].isNull()) {
-          g_currentR = jsonObj["r"].as<uint8_t>();
-          g_currentG = jsonObj["g"].as<uint8_t>();
-          g_currentB = jsonObj["b"].as<uint8_t>();
-          if (g_colorCallback) {
-            g_colorCallback(g_currentR, g_currentG, g_currentB);
+      "/api/state", [](AsyncWebServerRequest *request, JsonVariant &json) {
+        JsonObject doc = json.as<JsonObject>();
+        if (!doc.isNull()) {
+          if (!doc["power"].isNull()) g_state.power = doc["power"].as<bool>();
+          if (!doc["r"].isNull()) g_state.r = doc["r"].as<uint8_t>();
+          if (!doc["g"].isNull()) g_state.g = doc["g"].as<uint8_t>();
+          if (!doc["b"].isNull()) g_state.b = doc["b"].as<uint8_t>();
+          if (!doc["brightness"].isNull()) g_state.brightness = doc["brightness"].as<uint8_t>();
+          if (!doc["effect"].isNull()) g_state.effect = doc["effect"].as<String>();
+          if (!doc["speed"].isNull()) g_state.speed = doc["speed"].as<uint8_t>();
+
+          if (g_stateCallback) {
+            g_stateCallback(g_state);
           }
-          broadcastState(g_currentR, g_currentG, g_currentB);
+          broadcastState(g_state);
           request->send(200, "application/json", "{\"status\":\"ok\"}");
         } else {
-          request->send(400, "application/json",
-                        "{\"error\":\"Missing r, g, or b\"}");
+          request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
         }
       });
   server.addHandler(handler);
 
-  // Serve LittleFS static files
   server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
 
-  // Fallback for SPA routing / unhandled requests
   server.onNotFound([](AsyncWebServerRequest *request) {
     if (request->method() == HTTP_OPTIONS) {
       request->send(200);
@@ -191,10 +194,8 @@ void init(ColorCallback onColorChange) {
     }
   });
 
-  // Add CORS headers for local web dev preview
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
-  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers",
-                                       "Content-Type");
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type");
 
   server.begin();
   Serial.println("HTTP Web Server & WebSockets started");
@@ -202,23 +203,14 @@ void init(ColorCallback onColorChange) {
 
 void loop() {
   ws.cleanupClients();
-  // Maintain Wi-Fi multi-network connection if in STA mode
   if (g_usingStaMode) {
     wifiMulti.run();
   }
 }
 
-void broadcastState(uint8_t r, uint8_t g, uint8_t b) {
-  g_currentR = r;
-  g_currentG = g;
-  g_currentB = b;
-  JsonDocument doc;
-  doc["r"] = r;
-  doc["g"] = g;
-  doc["b"] = b;
-  String message;
-  serializeJson(doc, message);
-  ws.textAll(message);
+void broadcastState(const LightState &state) {
+  g_state = state;
+  ws.textAll(serializeStateJson(g_state));
 }
 
 }  // namespace web_server
