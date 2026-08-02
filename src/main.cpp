@@ -1,8 +1,9 @@
 // 3-channel PWM RGB LED driver for ESP32-C3 Super Mini
-// Includes Web Server, WebSockets, NVS State Persistence, and Dynamic Effects.
+// Includes Web Server, WebSockets, NVS State Persistence, 12-Bit PWM, Gamma 2.8, and Dynamic Effects.
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <cmath>
 
 #include "config.h"
 #include "web_server.h"
@@ -12,7 +13,7 @@ static constexpr uint8_t kPinOnboardLed = 8;
 static Preferences preferences;
 static web_server::LightState g_state;
 
-// Render outputs (for smooth power fading)
+// Render outputs in normalized float (0.0f to 1.0f) for smooth transitions
 static float g_currentR = 0.0f;
 static float g_currentG = 0.0f;
 static float g_currentB = 0.0f;
@@ -43,15 +44,33 @@ static void loadStateFromNvs() {
   preferences.end();
 }
 
-// Color wheel conversion
-static void hueToRgb(uint8_t h, uint8_t &r, uint8_t &g, uint8_t &b) {
-  const uint8_t seg = h / 85;
-  const uint8_t ramp = (h % 85) * 3;
-  switch (seg) {
-    case 0:  r = 255 - ramp; g = ramp;        b = 0;          break;
-    case 1:  r = 0;          g = 255 - ramp;  b = ramp;       break;
-    default: r = ramp;       g = 0;           b = 255 - ramp; break;
+// Continuous 6-segment floating-point color wheel (hueNorm in 0.0f..1.0f)
+static void hueToRgbFloat(float hueNorm, float &r, float &g, float &b) {
+  hueNorm = fmodf(hueNorm, 1.0f);
+  if (hueNorm < 0.0f) hueNorm += 1.0f;
+
+  float h6 = hueNorm * 6.0f;
+  int i = (int)h6;
+  float f = h6 - i;
+  float q = 1.0f - f;
+  float t = f;
+
+  switch (i % 6) {
+    case 0:  r = 1.0f; g = t;    b = 0.0f; break;
+    case 1:  r = q;    g = 1.0f; b = 0.0f; break;
+    case 2:  r = 0.0f; g = 1.0f; b = t;    break;
+    case 3:  r = 0.0f; g = q;    b = 1.0f; break;
+    case 4:  r = t;    g = 0.0f; b = 1.0f; break;
+    default: r = 1.0f; g = 0.0f; b = q;    break;
   }
+}
+
+// 12-bit Gamma 2.8 perceptual brightness correction
+static uint32_t applyGamma12(float normalized) {
+  normalized = constrain(normalized, 0.0f, 1.0f);
+  if (normalized <= 0.0001f) return 0;
+  float gammaCorrected = powf(normalized, 2.8f);
+  return (uint32_t)roundf(gammaCorrected * config::kPwmMaxDuty);
 }
 
 void setup() {
@@ -65,7 +84,7 @@ void setup() {
   ledcWrite(config::kPinRed, 0);
   ledcWrite(config::kPinGreen, 0);
   ledcWrite(config::kPinBlue, 0);
-  ledcWrite(kPinOnboardLed, 255);
+  ledcWrite(kPinOnboardLed, config::kPwmMaxDuty);
 
   loadStateFromNvs();
 
@@ -80,58 +99,70 @@ void setup() {
 void loop() {
   web_server::loop();
 
-  static uint32_t lastAnimTime = 0;
-  static uint8_t animHue = 0;
+  static uint32_t lastLoopTime = millis();
+  const uint32_t now = millis();
+  float deltaSec = (now - lastLoopTime) / 1000.0f;
+  lastLoopTime = now;
+
+  // Clamp deltaSec to prevent massive jumps on boot or long stalls
+  if (deltaSec < 0.001f) deltaSec = 0.001f;
+  if (deltaSec > 0.1f) deltaSec = 0.1f;
+
+  static float animHue = 0.0f;
   static float breathePhase = 0.0f;
   static bool strobeState = false;
+  static float strobeTimer = 0.0f;
 
-  uint8_t targetR = g_state.r;
-  uint8_t targetG = g_state.g;
-  uint8_t targetB = g_state.b;
-
-  const uint32_t now = millis();
-  const uint32_t speedMs = map(g_state.speed, 1, 100, 200, 10);
+  float targetR = g_state.r / 255.0f;
+  float targetG = g_state.g / 255.0f;
+  float targetB = g_state.b / 255.0f;
 
   if (g_state.power) {
     if (g_state.effect == "hue_cycle") {
-      if (now - lastAnimTime >= speedMs) {
-        lastAnimTime = now;
-        animHue++;
-      }
-      hueToRgb(animHue, targetR, targetG, targetB);
+      // Speed 1 -> 0.02 Hz (50s full cycle), Speed 100 -> 0.5 Hz (2s full cycle)
+      const float cycleFreqHz = 0.02f + (g_state.speed - 1) * (0.48f / 99.0f);
+      animHue += deltaSec * cycleFreqHz;
+      if (animHue >= 1.0f) animHue -= 1.0f;
+      hueToRgbFloat(animHue, targetR, targetG, targetB);
     } else if (g_state.effect == "breathe") {
-      if (now - lastAnimTime >= 16) {
-        lastAnimTime = now;
-        breathePhase += (0.02f * (g_state.speed / 50.0f));
-        if (breathePhase > 6.28318f) breathePhase -= 6.28318f;
-      }
-      float mult = (sinf(breathePhase) + 1.0f) * 0.5f;
-      targetR = (uint8_t)(targetR * mult);
-      targetG = (uint8_t)(targetG * mult);
-      targetB = (uint8_t)(targetB * mult);
+      const float breatheFreqHz = 0.1f + (g_state.speed - 1) * (1.9f / 99.0f);
+      breathePhase += deltaSec * breatheFreqHz * 6.2831853f;
+      if (breathePhase >= 6.2831853f) breathePhase -= 6.2831853f;
+      const float mult = (sinf(breathePhase) + 1.0f) * 0.5f;
+      targetR *= mult;
+      targetG *= mult;
+      targetB *= mult;
     } else if (g_state.effect == "candle") {
-      if (now - lastAnimTime >= speedMs) {
-        lastAnimTime = now;
-        float flick = random(70, 105) / 100.0f;
-        targetR = (uint8_t)constrain(targetR * flick, 0.0f, 255.0f);
-        targetG = (uint8_t)constrain(targetG * flick, 0.0f, 255.0f);
-        targetB = (uint8_t)constrain(targetB * flick, 0.0f, 255.0f);
+      static float candleFlicker = 1.0f;
+      static float candleTarget = 1.0f;
+      static float candleTimer = 0.0f;
+      candleTimer += deltaSec;
+      const float changeInterval = 0.08f + (100 - g_state.speed) * (0.25f / 99.0f);
+      if (candleTimer >= changeInterval) {
+        candleTimer = 0.0f;
+        candleTarget = random(60, 100) / 100.0f;
       }
+      candleFlicker += (candleTarget - candleFlicker) * 0.15f;
+      targetR *= candleFlicker;
+      targetG *= candleFlicker;
+      targetB *= candleFlicker;
     } else if (g_state.effect == "strobe") {
-      if (now - lastAnimTime >= speedMs * 2) {
-        lastAnimTime = now;
+      const float strobeInterval = 0.3f - (g_state.speed - 1) * (0.28f / 99.0f);
+      strobeTimer += deltaSec;
+      if (strobeTimer >= strobeInterval) {
+        strobeTimer = 0.0f;
         strobeState = !strobeState;
       }
       if (!strobeState) {
-        targetR = 0;
-        targetG = 0;
-        targetB = 0;
+        targetR = 0.0f;
+        targetG = 0.0f;
+        targetB = 0.0f;
       }
     }
   } else {
-    targetR = 0;
-    targetG = 0;
-    targetB = 0;
+    targetR = 0.0f;
+    targetG = 0.0f;
+    targetB = 0.0f;
   }
 
   // Calculate master brightness factor
@@ -140,19 +171,21 @@ void loop() {
   const float finalG = targetG * brightMult;
   const float finalB = targetB * brightMult;
 
-  // Smooth power transition easing
-  g_currentR += (finalR - g_currentR) * 0.2f;
-  g_currentG += (finalG - g_currentG) * 0.2f;
-  g_currentB += (finalB - g_currentB) * 0.2f;
+  // Sub-step low-pass exponential smoothing at 100 Hz
+  g_currentR += (finalR - g_currentR) * 0.12f;
+  g_currentG += (finalG - g_currentG) * 0.12f;
+  g_currentB += (finalB - g_currentB) * 0.12f;
 
-  const uint8_t rOut = (uint8_t)constrain(g_currentR, 0.0f, 255.0f);
-  const uint8_t gOut = (uint8_t)constrain(g_currentG, 0.0f, 255.0f);
-  const uint8_t bOut = (uint8_t)constrain(g_currentB, 0.0f, 255.0f);
+  // Apply 12-bit Gamma 2.8 curve
+  const uint32_t dutyR = applyGamma12(g_currentR);
+  const uint32_t dutyG = applyGamma12(g_currentG);
+  const uint32_t dutyB = applyGamma12(g_currentB);
+  const uint32_t dutyLed = config::kPwmMaxDuty - dutyR;  // active low onboard LED
 
-  ledcWrite(config::kPinRed, rOut);
-  ledcWrite(config::kPinGreen, gOut);
-  ledcWrite(config::kPinBlue, bOut);
-  ledcWrite(kPinOnboardLed, 255 - rOut);
+  ledcWrite(config::kPinRed, dutyR);
+  ledcWrite(config::kPinGreen, dutyG);
+  ledcWrite(config::kPinBlue, dutyB);
+  ledcWrite(kPinOnboardLed, dutyLed);
 
   delay(10);
 }

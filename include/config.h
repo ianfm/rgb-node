@@ -28,7 +28,8 @@ constexpr uint8_t kPinBlue = 7;
 constexpr uint8_t kPinBrightness = 1;
 
 constexpr uint32_t kPwmFreqHz = 5000;
-constexpr uint8_t kPwmResolutionBits = 8;  // duty range 0–255
+constexpr uint8_t kPwmResolutionBits = 12;  // duty range 0–4095 (12-bit)
+constexpr uint16_t kPwmMaxDuty = (1 << kPwmResolutionBits) - 1;  // 4095
 constexpr uint8_t kDefaultBrightness = 178; // 70% default brightness (178 / 255)
 
 // Primary Wi-Fi Network
