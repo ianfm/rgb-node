@@ -78,5 +78,6 @@ constexpr char kApSsid[] = "RGBNode-Setup";
 constexpr char kApPass[] = "12345678";
 
 constexpr uint16_t kHttpPort = 80;
+constexpr uint32_t kAudioSampleRate = 16000;
 
 }  // namespace config
