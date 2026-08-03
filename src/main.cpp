@@ -26,6 +26,9 @@ static void saveStateToNvs() {
   preferences.putUChar("g", g_state.g);
   preferences.putUChar("b", g_state.b);
   preferences.putUChar("brightness", g_state.brightness);
+  preferences.putString("mode", g_state.mode);
+  preferences.putUShort("colorTemp", g_state.colorTemp);
+  preferences.putUChar("warmth", g_state.warmth);
   preferences.putString("effect", g_state.effect);
   preferences.putUChar("speed", g_state.speed);
   preferences.end();
@@ -39,6 +42,9 @@ static void loadStateFromNvs() {
   g_state.g = preferences.getUChar("g", 240);
   g_state.b = preferences.getUChar("b", 255);
   g_state.brightness = preferences.getUChar("brightness", 255);
+  g_state.mode = preferences.getString("mode", "color");
+  g_state.colorTemp = preferences.getUShort("colorTemp", 2700);
+  g_state.warmth = preferences.getUChar("warmth", 84);
   g_state.effect = preferences.getString("effect", "static");
   g_state.speed = preferences.getUChar("speed", 50);
   preferences.end();
@@ -63,6 +69,40 @@ static void hueToRgbFloat(float hueNorm, float &r, float &g, float &b) {
     case 4:  r = t;    g = 0.0f; b = 1.0f; break;
     default: r = 1.0f; g = 0.0f; b = q;    break;
   }
+}
+
+// Convert Color Temperature (Kelvin 2000K .. 6500K) to normalized RGB floats
+static void kelvinToRgbFloat(uint16_t kelvin, float &r, float &g, float &b) {
+  kelvin = constrain(kelvin, (uint16_t)2000, (uint16_t)6500);
+  float temp = kelvin / 100.0f;
+  float calcR, calcG, calcB;
+
+  // Calculate Red
+  if (temp <= 66.0f) {
+    calcR = 255.0f;
+  } else {
+    calcR = 329.698727446f * powf(temp - 60.0f, -0.1332047592f);
+  }
+
+  // Calculate Green
+  if (temp <= 66.0f) {
+    calcG = 99.4708025861f * logf(temp) - 161.1195681661f;
+  } else {
+    calcG = 288.1221695283f * powf(temp - 60.0f, -0.0755148492f);
+  }
+
+  // Calculate Blue
+  if (temp >= 66.0f) {
+    calcB = 255.0f;
+  } else if (temp <= 19.0f) {
+    calcB = 0.0f;
+  } else {
+    calcB = 138.5177312231f * logf(temp - 10.0f) - 305.0447927307f;
+  }
+
+  r = constrain(calcR / 255.0f, 0.0f, 1.0f);
+  g = constrain(calcG / 255.0f, 0.0f, 1.0f);
+  b = constrain(calcB / 255.0f, 0.0f, 1.0f);
 }
 
 // 12-bit Gamma 2.8 perceptual brightness correction
@@ -118,7 +158,9 @@ void loop() {
   float targetB = g_state.b / 255.0f;
 
   if (g_state.power) {
-    if (g_state.effect == "hue_cycle") {
+    if (g_state.mode == "white") {
+      kelvinToRgbFloat(g_state.colorTemp, targetR, targetG, targetB);
+    } else if (g_state.effect == "hue_cycle") {
       // Speed 1 -> 0.02 Hz (50s full cycle), Speed 100 -> 0.5 Hz (2s full cycle)
       const float cycleFreqHz = 0.02f + (g_state.speed - 1) * (0.48f / 99.0f);
       animHue += deltaSec * cycleFreqHz;

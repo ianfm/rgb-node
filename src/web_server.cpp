@@ -29,6 +29,9 @@ static String serializeStateJson(const LightState &st) {
   doc["g"] = st.g;
   doc["b"] = st.b;
   doc["brightness"] = st.brightness;
+  doc["lightMode"] = st.mode;
+  doc["colorTemp"] = st.colorTemp;
+  doc["warmth"] = st.warmth;
   doc["effect"] = st.effect;
   doc["speed"] = st.speed;
   String out;
@@ -49,6 +52,9 @@ static void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
         if (!doc["g"].isNull()) g_state.g = doc["g"].as<uint8_t>();
         if (!doc["b"].isNull()) g_state.b = doc["b"].as<uint8_t>();
         if (!doc["brightness"].isNull()) g_state.brightness = doc["brightness"].as<uint8_t>();
+        if (!doc["lightMode"].isNull()) g_state.mode = doc["lightMode"].as<String>();
+        if (!doc["colorTemp"].isNull()) g_state.colorTemp = doc["colorTemp"].as<uint16_t>();
+        if (!doc["warmth"].isNull()) g_state.warmth = doc["warmth"].as<uint8_t>();
         if (!doc["effect"].isNull()) g_state.effect = doc["effect"].as<String>();
         if (!doc["speed"].isNull()) g_state.speed = doc["speed"].as<uint8_t>();
 
@@ -167,6 +173,9 @@ void init(StateCallback onStateChange, const LightState &initialState) {
     doc["g"] = g_state.g;
     doc["b"] = g_state.b;
     doc["brightness"] = g_state.brightness;
+    doc["lightMode"] = g_state.mode;
+    doc["colorTemp"] = g_state.colorTemp;
+    doc["warmth"] = g_state.warmth;
     doc["effect"] = g_state.effect;
     doc["speed"] = g_state.speed;
     doc["ip"] = (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString()
@@ -188,6 +197,9 @@ void init(StateCallback onStateChange, const LightState &initialState) {
           if (!doc["g"].isNull()) g_state.g = doc["g"].as<uint8_t>();
           if (!doc["b"].isNull()) g_state.b = doc["b"].as<uint8_t>();
           if (!doc["brightness"].isNull()) g_state.brightness = doc["brightness"].as<uint8_t>();
+          if (!doc["lightMode"].isNull()) g_state.mode = doc["lightMode"].as<String>();
+          if (!doc["colorTemp"].isNull()) g_state.colorTemp = doc["colorTemp"].as<uint16_t>();
+          if (!doc["warmth"].isNull()) g_state.warmth = doc["warmth"].as<uint8_t>();
           if (!doc["effect"].isNull()) g_state.effect = doc["effect"].as<String>();
           if (!doc["speed"].isNull()) g_state.speed = doc["speed"].as<uint8_t>();
 

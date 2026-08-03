@@ -405,3 +405,14 @@ input[type="range"]::-webkit-slider-thumb {
 .close-btn:hover {
   color: var(--color-text-primary);
 }
+
+/* Natural White Kelvin & Warmth Sliders */
+input[type="range"].cct-slider {
+  background: linear-gradient(to right, #ff9e43 0%, #ffe6cc 40%, #ffffff 65%, #d6eaff 100%);
+  height: 8px;
+}
+
+input[type="range"].warmth-slider {
+  background: linear-gradient(to right, #64748b 0%, #f59e0b 100%);
+  height: 8px;
+}

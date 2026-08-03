@@ -12,6 +12,9 @@ struct LightState {
   uint8_t g = 240;
   uint8_t b = 255;
   uint8_t brightness = 255;
+  String mode = "color";     // "color" or "white"
+  uint16_t colorTemp = 2700; // 2000K .. 6500K
+  uint8_t warmth = 84;       // 0% (6500K cool) .. 100% (2000K warm)
   String effect = "static";  // "static", "hue_cycle", "breathe", "candle", "strobe"
   uint8_t speed = 50;        // 1..100
 };

@@ -10,7 +10,10 @@ help:
 	@echo "  make build      compile the firmware"
 	@echo "  make flash      build and upload firmware over USB"
 	@echo "  make ota        flash firmware wirelessly over Wi-Fi (OTA)"
-	@echo "  make upload-fs  upload LittleFS static web UI to ESP32"
+	@echo "  make flash-ota  alias for make ota"
+	@echo "  make ota-fs     upload LittleFS static web UI wirelessly over Wi-Fi (OTA)"
+	@echo "  make ota-all    upload both firmware and LittleFS web UI wirelessly (OTA)"
+	@echo "  make upload-fs  upload LittleFS static web UI over USB"
 	@echo "  make release    build and package binaries to releases/v0.01/"
 	@echo "  make monitor    open the serial monitor (Ctrl+C to exit)"
 	@echo "  make clean      remove build artifacts"
@@ -34,6 +37,13 @@ flash:
 ota:
 	$(PIO) run -e esp32c3-supermini-ota -t upload
 
+flash-ota: ota
+
+ota-fs: build-web
+	$(PIO) run -e esp32c3-supermini-ota -t uploadfs
+
+ota-all: ota ota-fs
+
 upload-fs: build-web
 	$(PIO) run -t uploadfs
 
@@ -51,4 +61,4 @@ monitor:
 clean:
 	$(PIO) run -t clean
 
-.PHONY: help setup build-web build flash ota upload-fs release monitor clean
+.PHONY: help setup build-web build flash ota flash-ota ota-fs ota-all upload-fs release monitor clean
