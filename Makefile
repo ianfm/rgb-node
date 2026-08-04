@@ -1,4 +1,4 @@
-PIO := pio
+PIO := $(shell command -v pio 2>/dev/null || echo "$(HOME)/.local/bin/pio")
 
 .DEFAULT_GOAL := help
 
@@ -20,10 +20,10 @@ help:
 
 setup:
 	@command -v uv >/dev/null 2>&1 || { \
-		echo "uv not found — install it first:"; \
-		echo "  https://docs.astral.sh/uv/getting-started/installation/"; \
-		exit 1; }
-	uv tool install platformio
+		echo "Installing uv..."; \
+		curl -LsSf https://astral.sh/uv/install.sh | sh || exit 1; \
+	}
+	@PATH="$(HOME)/.local/bin:$$PATH" uv tool install platformio
 
 build-web:
 	cd web && npm install && npm run build

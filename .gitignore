@@ -3,3 +3,4 @@
 include/secrets.h
 web/node_modules/
 web/dist/
+managed_components/

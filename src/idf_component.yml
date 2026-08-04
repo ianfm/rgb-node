@@ -1,0 +1,3 @@
+dependencies:
+  joltwallet/littlefs: "^1.14.3"
+  espressif/mdns: "^1.0.0"
