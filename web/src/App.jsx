@@ -1,9 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-<<<<<<< HEAD
-import { Power, Sun, Palette, Settings, X, Wifi, Cpu, Activity, Upload, CheckCircle, AlertCircle } from 'lucide-react';
-=======
-import { Power, Sliders, Settings, X, Wifi, Cpu, Activity, Upload, CheckCircle, AlertCircle, Music, Volume2, SlidersHorizontal, Zap } from 'lucide-react';
->>>>>>> feature/music-synced-rgb
+import { Power, Sun, Palette, Settings, X, Wifi, Cpu, Activity, Upload, CheckCircle, AlertCircle, Music, Volume2, SlidersHorizontal, Zap, Sliders } from 'lucide-react';
 
 const RGB_SWATCHES = [
   { name: 'Red', r: 255, g: 0, b: 0 },
@@ -25,12 +21,8 @@ const WHITE_PRESETS = [
   { name: 'Cool Crisp', kelvin: 6500, warmth: 0, label: '6500K Cool' },
 ];
 
-<<<<<<< HEAD
-const EFFECTS = [
-=======
 const BASIC_EFFECTS = [
->>>>>>> feature/music-synced-rgb
-  { id: 'static', label: 'Static Color' },
+  { id: 'static', label: 'Static' },
   { id: 'hue_cycle', label: 'Rainbow Cycle' },
   { id: 'breathe', label: 'Breathe' },
   { id: 'candle', label: 'Candle Flicker' },
@@ -52,7 +44,7 @@ export default function App() {
     g: 240,
     b: 255,
     brightness: 255,
-    lightMode: 'white', // Default to Natural Room Lighting
+    mode: 'white',
     colorTemp: 2700,
     warmth: 84,
     effect: 'static',
@@ -63,11 +55,7 @@ export default function App() {
   });
 
   const [wsConnected, setWsConnected] = useState(false);
-<<<<<<< HEAD
-  const [activeTab, setActiveTab] = useState('natural'); // 'natural', 'rgb', or 'advanced'
-=======
-  const [activeTab, setActiveTab] = useState('controller'); // 'controller', 'music', 'advanced'
->>>>>>> feature/music-synced-rgb
+  const [activeTab, setActiveTab] = useState('white'); // 'white', 'color', 'music', 'advanced'
   const [deviceInfo, setDeviceInfo] = useState({ ip: '...', ssid: '...', mode: '...' });
   const [otaFile, setOtaFile] = useState(null);
   const [otaProgress, setOtaProgress] = useState(0);
@@ -95,7 +83,6 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setDeviceInfo({ ip: data.ip, ssid: data.ssid, mode: data.mode });
-        const fetchedMode = data.lightMode ?? 'white';
         setState((prev) => ({
           ...prev,
           power: data.power ?? prev.power,
@@ -103,7 +90,7 @@ export default function App() {
           g: data.g ?? prev.g,
           b: data.b ?? prev.b,
           brightness: data.brightness ?? prev.brightness,
-          lightMode: fetchedMode,
+          mode: data.mode ?? prev.mode,
           colorTemp: data.colorTemp ?? prev.colorTemp,
           warmth: data.warmth ?? prev.warmth,
           effect: data.effect ?? prev.effect,
@@ -112,8 +99,6 @@ export default function App() {
           noiseCutoff: data.noiseCutoff ?? prev.noiseCutoff,
           beatSens: data.beatSens ?? prev.beatSens,
         }));
-        if (fetchedMode === 'white') setActiveTab('natural');
-        else if (fetchedMode === 'color') setActiveTab('rgb');
       }
     } catch (e) {
       console.log('API status poll offline, waiting for WebSocket');
@@ -149,15 +134,6 @@ export default function App() {
     }
   };
 
-  const handleTabSwitch = (tab) => {
-    setActiveTab(tab);
-    if (tab === 'natural') {
-      updateState({ lightMode: 'white' });
-    } else if (tab === 'rgb') {
-      updateState({ lightMode: 'color' });
-    }
-  };
-
   const handleOtaUpload = () => {
     if (!otaFile) return;
     setOtaStatus('uploading');
@@ -189,9 +165,13 @@ export default function App() {
     xhr.send(formData);
   };
 
-  // Draw Color Wheel Canvas
+  // Convert Warmth (0..100) to Kelvin (6500K..2000K)
+  const warmthToKelvin = (w) => Math.round(6500 - (w / 100) * 4500);
+  const kelvinToWarmth = (k) => Math.round(((6500 - k) / 4500) * 100);
+
+  // Draw Color Wheel Canvas when Color tab active
   useEffect(() => {
-    if (activeTab !== 'rgb') return;
+    if (activeTab !== 'color') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -235,11 +215,7 @@ export default function App() {
     const sat = Math.min(1, distance / maxRadius);
     const { r, g, b } = hslToRgb(angle, sat, 0.5);
 
-<<<<<<< HEAD
-    updateState({ r, g, b, lightMode: 'color' });
-=======
-    updateState({ r, g, b, effect: 'static' });
->>>>>>> feature/music-synced-rgb
+    updateState({ r, g, b, mode: 'color', effect: 'static' });
   };
 
   const hslToRgb = (h, s, l) => {
@@ -273,27 +249,20 @@ export default function App() {
           <span className="logo-tag">ESP32-C3</span>
         </div>
 
-        {/* Primary Top Application Navigation */}
         <div className="nav-tabs">
           <button
-<<<<<<< HEAD
-            className={`nav-tab-btn ${activeTab === 'natural' ? 'active' : ''}`}
-            onClick={() => handleTabSwitch('natural')}
+            className={`nav-tab-btn ${activeTab === 'white' ? 'active' : ''}`}
+            onClick={() => setActiveTab('white')}
           >
-            ☀️ Natural Lighting
+            <Sun size={15} style={{ marginRight: '6px' }} />
+            Natural Lighting
           </button>
           <button
-            className={`nav-tab-btn ${activeTab === 'rgb' ? 'active' : ''}`}
-            onClick={() => handleTabSwitch('rgb')}
+            className={`nav-tab-btn ${activeTab === 'color' ? 'active' : ''}`}
+            onClick={() => setActiveTab('color')}
           >
-            🎨 RGB Effects
-=======
-            className={`nav-tab-btn ${activeTab === 'controller' ? 'active' : ''}`}
-            onClick={() => setActiveTab('controller')}
-          >
-            <Sliders size={15} style={{ marginRight: '6px' }} />
-            Controller
->>>>>>> feature/music-synced-rgb
+            <Palette size={15} style={{ marginRight: '6px' }} />
+            Decorative RGB
           </button>
           <button
             className={`nav-tab-btn ${activeTab === 'music' ? 'active' : ''}`}
@@ -306,12 +275,8 @@ export default function App() {
             className={`nav-tab-btn ${activeTab === 'advanced' ? 'active' : ''}`}
             onClick={() => setActiveTab('advanced')}
           >
-<<<<<<< HEAD
-            ⚙️ System
-=======
             <Settings size={15} style={{ marginRight: '6px' }} />
             Advanced
->>>>>>> feature/music-synced-rgb
           </button>
         </div>
 
@@ -335,160 +300,75 @@ export default function App() {
             onClick={() => updateState({ power: !state.power })}
           >
             <Power size={22} />
-            <span>{state.power ? 'SYSTEM POWER ON' : 'SYSTEM POWER OFF'}</span>
+            <span>{state.power ? 'POWER ON' : 'POWER OFF'}</span>
           </button>
         </section>
 
-<<<<<<< HEAD
-        {/* VIEW 1: Natural Room Lighting Application */}
-        {activeTab === 'natural' && (
+        {/* TAB 1: NATURAL LIGHTING (CCT KELVIN) */}
+        {activeTab === 'white' && (
           <>
-            <div className="grid-two-col">
-              {/* Color Temperature & Warmth Control */}
-              <section className="instrument-card">
-                <div className="card-title">
-                  <span>Color Temperature (CCT)</span>
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>{state.colorTemp}K</span>
-                </div>
+            <section className="instrument-card">
+              <div className="card-title">
+                <span>Color Temperature (Kelvin)</span>
+                <span className="slider-value">{state.colorTemp}K</span>
+              </div>
 
-                <div className="slider-group">
-                  <div className="slider-header">
-                    <span>Kelvin Color Temperature Scale</span>
-                    <span className="slider-value">{state.colorTemp}K</span>
-                  </div>
-                  <input
-                    type="range"
-                    className="cct-slider"
-                    min="2000"
-                    max="6500"
-                    step="50"
-                    value={state.colorTemp}
-                    onChange={(e) => {
-                      const temp = parseInt(e.target.value);
-                      const warmth = Math.round(((6500 - temp) / 4500) * 100);
-                      updateState({ colorTemp: temp, warmth, lightMode: 'white' });
-                    }}
-                  />
+              <div className="slider-group" style={{ marginTop: '16px' }}>
+                <div className="slider-header">
+                  <span>Warmth Spectrum (6500K Cool $\rightarrow$ 2000K Warm)</span>
+                  <span className="slider-value">{state.warmth}%</span>
                 </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={state.warmth}
+                  onChange={(e) => {
+                    const w = parseInt(e.target.value);
+                    const k = warmthToKelvin(w);
+                    updateState({ warmth: w, colorTemp: k, mode: 'white', effect: 'static' });
+                  }}
+                />
+              </div>
 
-                <div className="slider-group" style={{ marginTop: '24px' }}>
-                  <div className="slider-header">
-                    <span>Warmth Factor</span>
-                    <span className="slider-value">{state.warmth}% Warmth</span>
-                  </div>
-                  <input
-                    type="range"
-                    className="warmth-slider"
-                    min="0"
-                    max="100"
-                    value={state.warmth}
-                    onChange={(e) => {
-                      const warmth = parseInt(e.target.value);
-                      const temp = Math.round(6500 - (warmth / 100) * 4500);
-                      updateState({ warmth, colorTemp: temp, lightMode: 'white' });
-                    }}
-                  />
-                </div>
+              <div className="card-title" style={{ marginTop: '24px' }}>
+                <span>Quick White Presets</span>
+              </div>
+              <div className="swatch-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
+                {WHITE_PRESETS.map((p, i) => (
+                  <button
+                    key={i}
+                    className={`effect-btn ${state.mode === 'white' && state.colorTemp === p.kelvin ? 'active' : ''}`}
+                    onClick={() => updateState({ colorTemp: p.kelvin, warmth: p.warmth, mode: 'white', effect: 'static' })}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </section>
 
-                <div className="readout-box" style={{ marginTop: '20px' }}>
-                  <div className="readout-item">CCT: {state.colorTemp}K</div>
-                  <div className="readout-item">Warmth: {state.warmth}%</div>
-                </div>
-              </section>
-
-              {/* Master Room Brightness & Architectural Presets */}
-              <section className="instrument-card">
-                <div className="card-title">
-                  <span>Room Brightness Dimmer</span>
-=======
-        {/* TAB 1: CONTROLLER */}
-        {activeTab === 'controller' && (
-          <>
-            <div className="grid-two-col">
-              {/* Color Wheel Card */}
-              <section className="instrument-card">
-                <div className="card-title">
-                  <span>Color Selection</span>
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>{hexColor}</span>
-                </div>
-                <div className="color-wheel-wrapper">
-                  <canvas
-                    ref={canvasRef}
-                    width={200}
-                    height={200}
-                    className="color-canvas"
-                    onClick={handleWheelClick}
-                    onTouchMove={handleWheelClick}
-                  />
-                  <div className="readout-box">
-                    <div className="readout-item">R: {state.r}</div>
-                    <div className="readout-item">G: {state.g}</div>
-                    <div className="readout-item">B: {state.b}</div>
-                  </div>
-                </div>
-              </section>
-
-              {/* Preset Swatches & Brightness */}
-              <section className="instrument-card">
-                <div className="card-title">
-                  <span>Brightness & Swatches</span>
->>>>>>> feature/music-synced-rgb
-                  <span className="slider-value">{Math.round((state.brightness / 255) * 100)}%</span>
-                </div>
-
-                <div className="slider-group">
-                  <input
-                    type="range"
-                    min="0"
-                    max="255"
-                    value={state.brightness}
-                    onChange={(e) => updateState({ brightness: parseInt(e.target.value) })}
-                  />
-                </div>
-
-                <div className="card-title" style={{ marginTop: '24px' }}>
-<<<<<<< HEAD
-                  <span>Architectural Lighting Presets</span>
-                </div>
-
-                <div className="effect-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                  {WHITE_PRESETS.map((preset, i) => (
-                    <button
-                      key={i}
-                      className={`effect-btn ${state.lightMode === 'white' && state.colorTemp === preset.kelvin ? 'active' : ''}`}
-                      onClick={() => updateState({ colorTemp: preset.kelvin, warmth: preset.warmth, lightMode: 'white' })}
-                      style={{ padding: '12px 8px' }}
-                    >
-                      <div>{preset.name}</div>
-                      <div style={{ fontSize: '10px', opacity: 0.8, fontFamily: 'var(--font-mono)' }}>{preset.kelvin}K</div>
-                    </button>
-=======
-                  <span>Preset Swatches</span>
-                </div>
-
-                <div className="swatch-grid">
-                  {PRESET_SWATCHES.map((swatch, i) => (
-                    <button
-                      key={i}
-                      className="swatch-btn"
-                      style={{ backgroundColor: `rgb(${swatch.r}, ${swatch.g}, ${swatch.b})` }}
-                      onClick={() => updateState({ r: swatch.r, g: swatch.g, b: swatch.b, effect: 'static' })}
-                      title={swatch.name}
-                    />
->>>>>>> feature/music-synced-rgb
-                  ))}
-                </div>
-              </section>
-            </div>
-<<<<<<< HEAD
+            <section className="instrument-card">
+              <div className="card-title">
+                <span>Master Brightness</span>
+                <span className="slider-value">{Math.round((state.brightness / 255) * 100)}%</span>
+              </div>
+              <div className="slider-group">
+                <input
+                  type="range"
+                  min="0"
+                  max="255"
+                  value={state.brightness}
+                  onChange={(e) => updateState({ brightness: parseInt(e.target.value) })}
+                />
+              </div>
+            </section>
           </>
         )}
 
-        {/* VIEW 2: RGB Effects Application */}
-        {activeTab === 'rgb' && (
+        {/* TAB 2: DECORATIVE RGB */}
+        {activeTab === 'color' && (
           <>
             <div className="grid-two-col">
-              {/* Color Wheel Card */}
               <section className="instrument-card">
                 <div className="card-title">
                   <span>Color Selection</span>
@@ -511,7 +391,6 @@ export default function App() {
                 </div>
               </section>
 
-              {/* Vivid RGB Swatches & Brightness */}
               <section className="instrument-card">
                 <div className="card-title">
                   <span>Brightness & Swatches</span>
@@ -529,7 +408,7 @@ export default function App() {
                 </div>
 
                 <div className="card-title" style={{ marginTop: '24px' }}>
-                  <span>Vivid Color Swatches</span>
+                  <span>Preset Swatches</span>
                 </div>
 
                 <div className="swatch-grid">
@@ -538,7 +417,7 @@ export default function App() {
                       key={i}
                       className="swatch-btn"
                       style={{ backgroundColor: `rgb(${swatch.r}, ${swatch.g}, ${swatch.b})` }}
-                      onClick={() => updateState({ r: swatch.r, g: swatch.g, b: swatch.b, lightMode: 'color' })}
+                      onClick={() => updateState({ r: swatch.r, g: swatch.g, b: swatch.b, mode: 'color', effect: 'static' })}
                       title={swatch.name}
                     />
                   ))}
@@ -546,75 +425,23 @@ export default function App() {
               </section>
             </div>
 
-            {/* Dynamic Effects Card */}
             <section className="instrument-card">
               <div className="card-title">
-                <span>Dynamic Lighting Effects</span>
-=======
-
-            {/* Standard Dynamic Effects Card */}
-            <section className="instrument-card">
-              <div className="card-title">
-                <span>Standard Lighting Patterns</span>
->>>>>>> feature/music-synced-rgb
+                <span>Standard Dynamic Patterns</span>
                 <span style={{ fontFamily: 'var(--font-mono)' }}>{state.effect.toUpperCase()}</span>
               </div>
 
               <div className="effect-grid">
-<<<<<<< HEAD
-                {EFFECTS.map((eff) => (
-                  <button
-                    key={eff.id}
-                    className={`effect-btn ${state.effect === eff.id ? 'active' : ''}`}
-                    onClick={() => updateState({ effect: eff.id, lightMode: 'color' })}
-=======
                 {BASIC_EFFECTS.map((eff) => (
                   <button
                     key={eff.id}
                     className={`effect-btn ${state.effect === eff.id ? 'active' : ''}`}
                     onClick={() => updateState({ effect: eff.id })}
->>>>>>> feature/music-synced-rgb
                   >
                     {eff.label}
                   </button>
                 ))}
               </div>
-<<<<<<< HEAD
-
-              {state.effect !== 'static' && (
-                <div className="slider-group" style={{ marginTop: '16px' }}>
-                  <div className="slider-header">
-                    <span>Effect Speed</span>
-                    <span className="slider-value">{state.speed}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={state.speed}
-                    onChange={(e) => updateState({ speed: parseInt(e.target.value) })}
-                  />
-                </div>
-              )}
-            </section>
-          </>
-        )}
-      </main>
-
-      {/* Advanced System Modal / Tab */}
-      {activeTab === 'advanced' && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <div className="logo-container">
-                <Settings size={18} color="#94a3b8" />
-                <span className="logo-title">Advanced Settings</span>
-              </div>
-              <button className="close-btn" onClick={() => setActiveTab('natural')}>
-                <X size={20} />
-              </button>
-            </div>
-=======
 
               {state.effect !== 'static' && !state.effect.startsWith('music_') && (
                 <div className="slider-group" style={{ marginTop: '16px' }}>
@@ -635,7 +462,7 @@ export default function App() {
           </>
         )}
 
-        {/* TAB 2: DEDICATED MUSIC SYNC PAGE */}
+        {/* TAB 3: DEDICATED MUSIC SYNC PAGE */}
         {activeTab === 'music' && (
           <>
             <section className="instrument-card">
@@ -643,7 +470,6 @@ export default function App() {
                 <span>INMP441 Music Sync Profiles</span>
                 <Music size={18} color="#3b82f6" />
               </div>
->>>>>>> feature/music-synced-rgb
 
               <div className="effect-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
                 {MUSIC_PROFILES.map((prof) => (
@@ -748,7 +574,7 @@ export default function App() {
           </>
         )}
 
-        {/* TAB 3: ADVANCED SETTINGS */}
+        {/* TAB 4: ADVANCED SETTINGS */}
         {activeTab === 'advanced' && (
           <>
             <section className="instrument-card">
