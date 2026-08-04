@@ -30,6 +30,8 @@ static void saveStateToNvs() {
   preferences.putString("effect", g_state.effect);
   preferences.putUChar("speed", g_state.speed);
   preferences.putUChar("musicSens", g_state.musicSensitivity);
+  preferences.putUChar("noiseCut", g_state.noiseCutoff);
+  preferences.putUChar("beatSens", g_state.beatSens);
   preferences.end();
 }
 
@@ -44,6 +46,8 @@ static void loadStateFromNvs() {
   g_state.effect = preferences.getString("effect", "static");
   g_state.speed = preferences.getUChar("speed", 50);
   g_state.musicSensitivity = preferences.getUChar("musicSens", 50);
+  g_state.noiseCutoff = preferences.getUChar("noiseCut", 8);
+  g_state.beatSens = preferences.getUChar("beatSens", 45);
   preferences.end();
 }
 
@@ -185,24 +189,30 @@ void loop() {
       targetG *= pulseDecay;
       targetB *= pulseDecay;
     } else if (g_state.effect == "music_amplitude") {
-      targetR *= bands.totalAmp;
-      targetG *= bands.totalAmp;
-      targetB *= bands.totalAmp;
+      const float cutoff = g_state.noiseCutoff / 100.0f;
+      float cleanAmp = (bands.totalAmp < cutoff) ? 0.0f : constrain((bands.totalAmp - cutoff) / (1.0f - cutoff), 0.0f, 1.0f);
+      targetR *= cleanAmp;
+      targetG *= cleanAmp;
+      targetB *= cleanAmp;
     } else if (g_state.effect == "music_freq_hue") {
+      const float cutoff = g_state.noiseCutoff / 100.0f;
+      float cleanAmp = (bands.totalAmp < cutoff) ? 0.0f : constrain((bands.totalAmp - cutoff) / (1.0f - cutoff), 0.0f, 1.0f);
       hueToRgbFloat(bands.dominantHue, targetR, targetG, targetB);
-      targetR *= bands.totalAmp;
-      targetG *= bands.totalAmp;
-      targetB *= bands.totalAmp;
+      targetR *= cleanAmp;
+      targetG *= cleanAmp;
+      targetB *= cleanAmp;
     } else if (g_state.effect == "music_chill") {
+      const float cutoff = g_state.noiseCutoff / 100.0f;
+      float cleanAmp = (bands.totalAmp < cutoff) ? 0.0f : constrain((bands.totalAmp - cutoff) / (1.0f - cutoff), 0.0f, 1.0f);
       float spectR = bands.bass;
       float spectG = bands.mid;
       float spectB = bands.treble;
       targetR = targetR * 0.4f + spectR * 0.6f;
       targetG = targetG * 0.4f + spectG * 0.6f;
       targetB = targetB * 0.4f + spectB * 0.6f;
-      targetR *= (0.3f + 0.7f * bands.totalAmp);
-      targetG *= (0.3f + 0.7f * bands.totalAmp);
-      targetB *= (0.3f + 0.7f * bands.totalAmp);
+      targetR *= (0.2f + 0.8f * cleanAmp);
+      targetG *= (0.2f + 0.8f * cleanAmp);
+      targetB *= (0.2f + 0.8f * cleanAmp);
     }
   } else {
     targetR = 0.0f;

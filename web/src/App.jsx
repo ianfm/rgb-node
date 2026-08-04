@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Power, Sliders, Settings, X, Wifi, Cpu, Activity, Upload, CheckCircle, AlertCircle } from 'lucide-react';
+import { Power, Sliders, Settings, X, Wifi, Cpu, Activity, Upload, CheckCircle, AlertCircle, Music, Volume2, SlidersHorizontal, Zap } from 'lucide-react';
 
 const PRESET_SWATCHES = [
   { name: 'Warm White', r: 255, g: 241, b: 224 },
@@ -12,17 +12,20 @@ const PRESET_SWATCHES = [
   { name: 'Amber', r: 255, g: 149, b: 0 },
 ];
 
-const EFFECTS = [
-  { id: 'static', label: 'Static' },
+const BASIC_EFFECTS = [
+  { id: 'static', label: 'Static Color' },
   { id: 'hue_cycle', label: 'Rainbow Cycle' },
   { id: 'breathe', label: 'Breathe' },
   { id: 'candle', label: 'Candle Flicker' },
   { id: 'strobe', label: 'Strobe' },
-  { id: 'music_spectrum', label: '🎵 Music: Spectrum' },
-  { id: 'music_pulse', label: '🎵 Music: Beat Pulse' },
-  { id: 'music_amplitude', label: '🎵 Music: Amplitude' },
-  { id: 'music_freq_hue', label: '🎵 Music: Pitch-to-Hue' },
-  { id: 'music_chill', label: '🎵 Music: Ambient Chill' },
+];
+
+const MUSIC_PROFILES = [
+  { id: 'music_spectrum', label: '🎵 Spectrum (R=Bass, G=Mid, B=Treb)', desc: 'Direct 3-band frequency energy channel mapping' },
+  { id: 'music_pulse', label: '🥁 Beat Pulse', desc: 'Strobe flash triggered dynamically on transient bass beats' },
+  { id: 'music_amplitude', label: '🔊 Amplitude Intensity', desc: 'Volume-proportional master brightness modulation' },
+  { id: 'music_freq_hue', label: '🌈 Pitch-to-Hue', desc: 'Zero-crossing continuous pitch frequency color tracking' },
+  { id: 'music_chill', label: '🌙 Ambient Chill', desc: 'Low-pass filtered soothing room audio ambience' },
 ];
 
 export default function App() {
@@ -35,10 +38,12 @@ export default function App() {
     effect: 'static',
     speed: 50,
     musicSensitivity: 50,
+    noiseCutoff: 8,
+    beatSens: 45,
   });
 
   const [wsConnected, setWsConnected] = useState(false);
-  const [activeTab, setActiveTab] = useState('main'); // 'main' or 'advanced'
+  const [activeTab, setActiveTab] = useState('controller'); // 'controller', 'music', 'advanced'
   const [deviceInfo, setDeviceInfo] = useState({ ip: '...', ssid: '...', mode: '...' });
   const [otaFile, setOtaFile] = useState(null);
   const [otaProgress, setOtaProgress] = useState(0);
@@ -76,6 +81,8 @@ export default function App() {
           effect: data.effect ?? prev.effect,
           speed: data.speed ?? prev.speed,
           musicSensitivity: data.musicSensitivity ?? prev.musicSensitivity,
+          noiseCutoff: data.noiseCutoff ?? prev.noiseCutoff,
+          beatSens: data.beatSens ?? prev.beatSens,
         }));
       }
     } catch (e) {
@@ -169,7 +176,7 @@ export default function App() {
       ctx.fillStyle = gradient;
       ctx.fill();
     }
-  }, []);
+  }, [activeTab]);
 
   const handleWheelClick = (e) => {
     const canvas = canvasRef.current;
@@ -188,7 +195,7 @@ export default function App() {
     const sat = Math.min(1, distance / maxRadius);
     const { r, g, b } = hslToRgb(angle, sat, 0.5);
 
-    updateState({ r, g, b });
+    updateState({ r, g, b, effect: 'static' });
   };
 
   const hslToRgb = (h, s, l) => {
@@ -224,15 +231,24 @@ export default function App() {
 
         <div className="nav-tabs">
           <button
-            className={`nav-tab-btn ${activeTab === 'main' ? 'active' : ''}`}
-            onClick={() => setActiveTab('main')}
+            className={`nav-tab-btn ${activeTab === 'controller' ? 'active' : ''}`}
+            onClick={() => setActiveTab('controller')}
           >
+            <Sliders size={15} style={{ marginRight: '6px' }} />
             Controller
+          </button>
+          <button
+            className={`nav-tab-btn ${activeTab === 'music' ? 'active' : ''}`}
+            onClick={() => setActiveTab('music')}
+          >
+            <Music size={15} style={{ marginRight: '6px' }} />
+            Music Sync
           </button>
           <button
             className={`nav-tab-btn ${activeTab === 'advanced' ? 'active' : ''}`}
             onClick={() => setActiveTab('advanced')}
           >
+            <Settings size={15} style={{ marginRight: '6px' }} />
             Advanced
           </button>
         </div>
@@ -261,134 +277,222 @@ export default function App() {
           </button>
         </section>
 
-        {/* Color & Brightness Grid */}
-        <div className="grid-two-col">
-          {/* Color Wheel Card */}
-          <section className="instrument-card">
-            <div className="card-title">
-              <span>Color Selection</span>
-              <span style={{ fontFamily: 'var(--font-mono)' }}>{hexColor}</span>
+        {/* TAB 1: CONTROLLER */}
+        {activeTab === 'controller' && (
+          <>
+            <div className="grid-two-col">
+              {/* Color Wheel Card */}
+              <section className="instrument-card">
+                <div className="card-title">
+                  <span>Color Selection</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{hexColor}</span>
+                </div>
+                <div className="color-wheel-wrapper">
+                  <canvas
+                    ref={canvasRef}
+                    width={200}
+                    height={200}
+                    className="color-canvas"
+                    onClick={handleWheelClick}
+                    onTouchMove={handleWheelClick}
+                  />
+                  <div className="readout-box">
+                    <div className="readout-item">R: {state.r}</div>
+                    <div className="readout-item">G: {state.g}</div>
+                    <div className="readout-item">B: {state.b}</div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Preset Swatches & Brightness */}
+              <section className="instrument-card">
+                <div className="card-title">
+                  <span>Brightness & Swatches</span>
+                  <span className="slider-value">{Math.round((state.brightness / 255) * 100)}%</span>
+                </div>
+
+                <div className="slider-group">
+                  <input
+                    type="range"
+                    min="0"
+                    max="255"
+                    value={state.brightness}
+                    onChange={(e) => updateState({ brightness: parseInt(e.target.value) })}
+                  />
+                </div>
+
+                <div className="card-title" style={{ marginTop: '24px' }}>
+                  <span>Preset Swatches</span>
+                </div>
+
+                <div className="swatch-grid">
+                  {PRESET_SWATCHES.map((swatch, i) => (
+                    <button
+                      key={i}
+                      className="swatch-btn"
+                      style={{ backgroundColor: `rgb(${swatch.r}, ${swatch.g}, ${swatch.b})` }}
+                      onClick={() => updateState({ r: swatch.r, g: swatch.g, b: swatch.b, effect: 'static' })}
+                      title={swatch.name}
+                    />
+                  ))}
+                </div>
+              </section>
             </div>
-            <div className="color-wheel-wrapper">
-              <canvas
-                ref={canvasRef}
-                width={200}
-                height={200}
-                className="color-canvas"
-                onClick={handleWheelClick}
-                onTouchMove={handleWheelClick}
-              />
-              <div className="readout-box">
-                <div className="readout-item">R: {state.r}</div>
-                <div className="readout-item">G: {state.g}</div>
-                <div className="readout-item">B: {state.b}</div>
+
+            {/* Standard Dynamic Effects Card */}
+            <section className="instrument-card">
+              <div className="card-title">
+                <span>Standard Lighting Patterns</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{state.effect.toUpperCase()}</span>
               </div>
-            </div>
-          </section>
 
-          {/* Preset Swatches & Brightness */}
-          <section className="instrument-card">
-            <div className="card-title">
-              <span>Brightness & Swatches</span>
-              <span className="slider-value">{Math.round((state.brightness / 255) * 100)}%</span>
-            </div>
-
-            <div className="slider-group">
-              <input
-                type="range"
-                min="0"
-                max="255"
-                value={state.brightness}
-                onChange={(e) => updateState({ brightness: parseInt(e.target.value) })}
-              />
-            </div>
-
-            <div className="card-title" style={{ marginTop: '24px' }}>
-              <span>Preset Swatches</span>
-            </div>
-
-            <div className="swatch-grid">
-              {PRESET_SWATCHES.map((swatch, i) => (
-                <button
-                  key={i}
-                  className="swatch-btn"
-                  style={{ backgroundColor: `rgb(${swatch.r}, ${swatch.g}, ${swatch.b})` }}
-                  onClick={() => updateState({ r: swatch.r, g: swatch.g, b: swatch.b })}
-                  title={swatch.name}
-                />
-              ))}
-            </div>
-          </section>
-        </div>
-
-        {/* Dynamic Effects Card */}
-        <section className="instrument-card">
-          <div className="card-title">
-            <span>Dynamic Lighting Effects</span>
-            <span style={{ fontFamily: 'var(--font-mono)' }}>{state.effect.toUpperCase()}</span>
-          </div>
-
-          <div className="effect-grid">
-            {EFFECTS.map((eff) => (
-              <button
-                key={eff.id}
-                className={`effect-btn ${state.effect === eff.id ? 'active' : ''}`}
-                onClick={() => updateState({ effect: eff.id })}
-              >
-                {eff.label}
-              </button>
-            ))}
-          </div>
-
-          {state.effect !== 'static' && (
-            <div className="slider-group" style={{ marginTop: '16px' }}>
-              <div className="slider-header">
-                <span>Effect Speed</span>
-                <span className="slider-value">{state.speed}%</span>
+              <div className="effect-grid">
+                {BASIC_EFFECTS.map((eff) => (
+                  <button
+                    key={eff.id}
+                    className={`effect-btn ${state.effect === eff.id ? 'active' : ''}`}
+                    onClick={() => updateState({ effect: eff.id })}
+                  >
+                    {eff.label}
+                  </button>
+                ))}
               </div>
-              <input
-                type="range"
-                min="1"
-                max="100"
-                value={state.speed}
-                onChange={(e) => updateState({ speed: parseInt(e.target.value) })}
-              />
-            </div>
-          )}
 
-          {state.effect.startsWith('music_') && (
-            <div className="slider-group" style={{ marginTop: '16px' }}>
-              <div className="slider-header">
-                <span>Microphone Gain / Sensitivity</span>
-                <span className="slider-value">{state.musicSensitivity}%</span>
+              {state.effect !== 'static' && !state.effect.startsWith('music_') && (
+                <div className="slider-group" style={{ marginTop: '16px' }}>
+                  <div className="slider-header">
+                    <span>Pattern Cycle Speed</span>
+                    <span className="slider-value">{state.speed}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    value={state.speed}
+                    onChange={(e) => updateState({ speed: parseInt(e.target.value) })}
+                  />
+                </div>
+              )}
+            </section>
+          </>
+        )}
+
+        {/* TAB 2: DEDICATED MUSIC SYNC PAGE */}
+        {activeTab === 'music' && (
+          <>
+            <section className="instrument-card">
+              <div className="card-title">
+                <span>INMP441 Music Sync Profiles</span>
+                <Music size={18} color="#3b82f6" />
               </div>
-              <input
-                type="range"
-                min="1"
-                max="100"
-                value={state.musicSensitivity}
-                onChange={(e) => updateState({ musicSensitivity: parseInt(e.target.value) })}
-              />
-            </div>
-          )}
-        </section>
-      </main>
 
-      {/* Advanced Modal / Tab */}
-      {activeTab === 'advanced' && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <div className="logo-container">
-                <Settings size={18} color="#94a3b8" />
-                <span className="logo-title">Advanced Settings</span>
+              <div className="effect-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                {MUSIC_PROFILES.map((prof) => (
+                  <button
+                    key={prof.id}
+                    className={`effect-btn ${state.effect === prof.id ? 'active' : ''}`}
+                    onClick={() => updateState({ effect: prof.id })}
+                    style={{ textAlign: 'left', padding: '14px', display: 'flex', flexDirection: 'column', gap: '4px' }}
+                  >
+                    <span style={{ fontWeight: 600, fontSize: '13px' }}>{prof.label}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{prof.desc}</span>
+                  </button>
+                ))}
               </div>
-              <button className="close-btn" onClick={() => setActiveTab('main')}>
-                <X size={20} />
-              </button>
-            </div>
+            </section>
 
-            <div className="instrument-card">
+            <div className="grid-two-col">
+              {/* Audio DSP Processing Controls */}
+              <section className="instrument-card">
+                <div className="card-title">
+                  <span>Audio DSP Gain & Noise Gate</span>
+                  <SlidersHorizontal size={16} color="#94a3b8" />
+                </div>
+
+                <div className="slider-group" style={{ marginTop: '12px' }}>
+                  <div className="slider-header">
+                    <span>Microphone Preamp Gain / Sensitivity</span>
+                    <span className="slider-value">{state.musicSensitivity}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    value={state.musicSensitivity}
+                    onChange={(e) => updateState({ musicSensitivity: parseInt(e.target.value) })}
+                  />
+                  <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                    Adjusts INMP441 digital microphone AGC multiplier to match room sound pressure level.
+                  </p>
+                </div>
+
+                <div className="slider-group" style={{ marginTop: '20px' }}>
+                  <div className="slider-header">
+                    <span>Low-End Cutoff Noise Gate</span>
+                    <span className="slider-value">{state.noiseCutoff ?? 8}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="25"
+                    value={state.noiseCutoff ?? 8}
+                    onChange={(e) => updateState({ noiseCutoff: parseInt(e.target.value) })}
+                  />
+                  <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                    Suppresses low ambient room noise floor to eliminate dim-flicker during quiet pauses.
+                  </p>
+                </div>
+              </section>
+
+              {/* Advanced Beat & Strobe Controls */}
+              <section className="instrument-card">
+                <div className="card-title">
+                  <span>Beat Detection & Transient Trigger</span>
+                  <Zap size={16} color="#94a3b8" />
+                </div>
+
+                <div className="slider-group" style={{ marginTop: '12px' }}>
+                  <div className="slider-header">
+                    <span>Beat Threshold Sensitivity</span>
+                    <span className="slider-value">{state.beatSens ?? 45}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="10"
+                    max="90"
+                    value={state.beatSens ?? 45}
+                    onChange={(e) => updateState({ beatSens: parseInt(e.target.value) })}
+                  />
+                  <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                    Controls transient peak detection multiplier for Beat Pulse strobe triggers.
+                  </p>
+                </div>
+
+                <div className="slider-group" style={{ marginTop: '20px' }}>
+                  <div className="slider-header">
+                    <span>Smooth Transition Speed</span>
+                    <span className="slider-value">{state.speed}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    value={state.speed}
+                    onChange={(e) => updateState({ speed: parseInt(e.target.value) })}
+                  />
+                  <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                    Adjusts exponential decay rate and color wheel cycle rate for music profiles.
+                  </p>
+                </div>
+              </section>
+            </div>
+          </>
+        )}
+
+        {/* TAB 3: ADVANCED SETTINGS */}
+        {activeTab === 'advanced' && (
+          <>
+            <section className="instrument-card">
               <div className="card-title">Device & Network Info</div>
               <div className="slider-header" style={{ margin: '6px 0' }}>
                 <span>mDNS Host:</span>
@@ -406,10 +510,10 @@ export default function App() {
                 <span>Wi-Fi Mode:</span>
                 <span className="slider-value">{deviceInfo.mode}</span>
               </div>
-            </div>
+            </section>
 
             {/* OTA Wireless Update Card */}
-            <div className="instrument-card">
+            <section className="instrument-card">
               <div className="card-title">
                 <span>Wireless OTA Update</span>
                 <Upload size={16} color="#94a3b8" />
@@ -454,9 +558,9 @@ export default function App() {
                   </div>
                 )}
               </div>
-            </div>
+            </section>
 
-            <div className="instrument-card">
+            <section className="instrument-card">
               <div className="card-title">Gamma Calibration</div>
               <div className="slider-group">
                 <div className="slider-header">
@@ -467,10 +571,10 @@ export default function App() {
                   12-bit perceptual gamma curve active across all 3 PWM channels.
                 </p>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+            </section>
+          </>
+        )}
+      </main>
     </div>
   );
 }

@@ -31,8 +31,9 @@ AudioBands getBands() {
 }
 
 static void audioTask(void *param) {
-  static float maxPeak = 100000.0f;
+  static float maxPeak = 0.05f;
   static float bassAvg = 0.0f;
+  static float smoothedHue = 0.0f;
   
   while (true) {
     size_t bytesRead = 0;
@@ -41,65 +42,80 @@ static void audioTask(void *param) {
       if (err == ESP_OK && bytesRead > 0) {
         size_t samplesRead = bytesRead / sizeof(int32_t);
         
-        // Remove DC offset and compute band energies using Goertzel / IIR quadrature filters
-        float sumBass = 0.0f;
-        float sumMid = 0.0f;
-        float sumTreble = 0.0f;
-        float sumTotal = 0.0f;
+        // Remove DC offset and compute RMS volume + zero crossing frequency estimate
+        float sumSamples = 0.0f;
+        for (size_t i = 0; i < samplesRead; i++) {
+          float s = (float)(rawSamples[i] >> 8) / 8388608.0f;
+          sumSamples += s;
+        }
+        float dcOffset = sumSamples / samplesRead;
 
-        // Simple IIR filter accumulators
-        static float lowpassBass = 0.0f;
-        static float bandpassMid = 0.0f;
-        static float highpassTreble = 0.0f;
+        float sumEnergy = 0.0f;
+        float zeroCrossings = 0.0f;
+        float prevSample = 0.0f;
+
+        // Band filters
+        float sumBass = 0.0f, sumMid = 0.0f, sumTreble = 0.0f;
+        static float lpBass = 0.0f, hpTreble = 0.0f;
 
         for (size_t i = 0; i < samplesRead; i++) {
-          // INMP441 is 24-bit data left-aligned in 32-bit container
-          float sample = (float)(rawSamples[i] >> 8) / 8388608.0f; // Normalized -1.0 to 1.0
+          float s = ((float)(rawSamples[i] >> 8) / 8388608.0f) - dcOffset;
+          sumEnergy += s * s;
 
-          // Simple band splitting IIR filters
-          lowpassBass += (sample - lowpassBass) * 0.08f;               // ~200Hz LP cutoff @ 16kHz
-          highpassTreble += (sample - highpassTreble) * 0.60f;         // High pass tracking
-          float trebleSample = sample - highpassTreble;                // >4kHz HP cutoff
-          float midSample = sample - lowpassBass - trebleSample;       // 200Hz - 4kHz BP
+          // Zero-crossing count for pitch frequency estimation
+          if (i > 0 && ((s >= 0.0f && prevSample < 0.0f) || (s < 0.0f && prevSample >= 0.0f))) {
+            zeroCrossings += 1.0f;
+          }
+          prevSample = s;
 
-          sumBass += lowpassBass * lowpassBass;
-          sumMid += midSample * midSample;
-          sumTreble += trebleSample * trebleSample;
-          sumTotal += sample * sample;
+          // 3-Band splitting
+          lpBass += (s - lpBass) * 0.12f;                  // ~300Hz LP
+          hpTreble += (s - hpTreble) * 0.45f;              // ~2.5kHz HP
+          float trebleS = s - hpTreble;
+          float midS = s - lpBass - trebleS;
+
+          sumBass += lpBass * lpBass;
+          sumMid += midS * midS;
+          sumTreble += trebleS * trebleS;
         }
 
+        float rmsTotal = sqrtf(sumEnergy / samplesRead) * g_sensitivityMult;
         float rmsBass = sqrtf(sumBass / samplesRead) * g_sensitivityMult;
         float rmsMid = sqrtf(sumMid / samplesRead) * g_sensitivityMult;
         float rmsTreble = sqrtf(sumTreble / samplesRead) * g_sensitivityMult;
-        float rmsTotal = sqrtf(sumTotal / samplesRead) * g_sensitivityMult;
 
-        // Dynamic AGC (Automatic Gain Control) Peak Tracking with Exponential Decay
-        float currentPeak = fmaxf(rmsTotal, fmaxf(rmsBass, fmaxf(rmsMid, rmsTreble)));
-        if (currentPeak > maxPeak) {
-          maxPeak = currentPeak;
+        // Dynamic AGC with floor
+        if (rmsTotal > maxPeak) {
+          maxPeak = rmsTotal;
         } else {
-          maxPeak = fmaxf(0.01f, maxPeak * 0.995f); // Slow decay
+          maxPeak = fmaxf(0.02f, maxPeak * 0.992f);
         }
 
-        // Normalize bands to 0.0f .. 1.0f range based on peak envelope
+        float normTotal = constrain(rmsTotal / maxPeak, 0.0f, 1.0f);
         float normBass = constrain(rmsBass / maxPeak, 0.0f, 1.0f);
         float normMid = constrain(rmsMid / maxPeak, 0.0f, 1.0f);
         float normTreble = constrain(rmsTreble / maxPeak, 0.0f, 1.0f);
-        float normTotal = constrain(rmsTotal / maxPeak, 0.0f, 1.0f);
 
-        // Beat detection logic (transient peak in bass band)
+        // Beat detection
         bassAvg += (normBass - bassAvg) * 0.1f;
         bool isBeat = (normBass > (bassAvg * 1.45f)) && (normBass > 0.35f);
 
-        // Dominant Pitch-to-Hue mapping
-        float domHue = 0.0f;
-        if (normBass > normMid && normBass > normTreble) {
-          domHue = 0.0f + 0.15f * (1.0f - normBass); // Red/Orange range
-        } else if (normMid >= normBass && normMid >= normTreble) {
-          domHue = 0.33f + 0.2f * normMid;           // Green/Cyan range
-        } else {
-          domHue = 0.66f + 0.25f * normTreble;        // Blue/Purple range
+        // Calculate estimated pitch frequency (Hz) from Zero Crossings:
+        // Freq (Hz) = (ZeroCrossings / 2) * (SampleRate / SampleCount)
+        float estFreqHz = (zeroCrossings * 0.5f) * (config::kAudioSampleRate / (float)samplesRead);
+
+        // Map pitch frequency to smooth continuous Hue (0.0f Red to 0.75f Purple)
+        // 100Hz (Bass) -> 0.0 (Red), 800Hz (Mids) -> 0.33 (Green), 2200Hz+ (Whistle/High Pitch) -> 0.66 (Blue)
+        float targetHue = smoothedHue;
+        if (normTotal > 0.05f) { // Noise gate
+          float freqNorm = constrain((estFreqHz - 120.0f) / 2400.0f, 0.0f, 1.0f);
+          targetHue = freqNorm * 0.75f; // Red -> Yellow -> Green -> Cyan -> Blue -> Purple
         }
+
+        // Exponential low-pass temporal smoothing filter to eliminate flicker
+        smoothedHue += (targetHue - smoothedHue) * 0.08f;
+        smoothedHue = fmodf(smoothedHue, 1.0f);
+        if (smoothedHue < 0.0f) smoothedHue += 1.0f;
 
         if (g_bandsMutex && xSemaphoreTake(g_bandsMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
           g_currentBands.bass = normBass;
@@ -107,7 +123,7 @@ static void audioTask(void *param) {
           g_currentBands.treble = normTreble;
           g_currentBands.totalAmp = normTotal;
           g_currentBands.beat = isBeat;
-          g_currentBands.dominantHue = domHue;
+          g_currentBands.dominantHue = smoothedHue;
           xSemaphoreGive(g_bandsMutex);
         }
       }
