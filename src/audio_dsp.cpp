@@ -8,17 +8,18 @@ namespace audio_dsp {
 
 static i2s_chan_handle_t rx_handle = nullptr;
 static AudioBands g_currentBands;
-static float g_sensitivityMult = 1.0f;
+static DspConfig g_dspConfig;
 static SemaphoreHandle_t g_bandsMutex = nullptr;
 
 // 256 sample buffer at 16 kHz = 16ms window
 static constexpr size_t kSampleCount = 256;
 static int32_t rawSamples[kSampleCount];
 
-void setSensitivity(uint8_t sensitivity) {
-  // Sensitivity 1..100 maps to gain multiplier 0.2f .. 5.0f
-  float norm = constrain((float)sensitivity, 1.0f, 100.0f);
-  g_sensitivityMult = 0.2f + (norm - 1.0f) * (4.8f / 99.0f);
+void setConfig(const DspConfig &cfg) {
+  if (g_bandsMutex && xSemaphoreTake(g_bandsMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+    g_dspConfig = cfg;
+    xSemaphoreGive(g_bandsMutex);
+  }
 }
 
 AudioBands getBands() {
@@ -34,15 +35,28 @@ static void audioTask(void *param) {
   static float maxPeak = 0.05f;
   static float bassAvg = 0.0f;
   static float smoothedHue = 0.0f;
-  
+
   while (true) {
     size_t bytesRead = 0;
     if (rx_handle != nullptr) {
       esp_err_t err = i2s_channel_read(rx_handle, rawSamples, sizeof(rawSamples), &bytesRead, pdMS_TO_TICKS(50));
       if (err == ESP_OK && bytesRead > 0) {
         size_t samplesRead = bytesRead / sizeof(int32_t);
-        
-        // Remove DC offset and compute RMS volume + zero crossing frequency estimate
+
+        // Fetch current DSP Config thread-safely
+        DspConfig cfg;
+        if (g_bandsMutex && xSemaphoreTake(g_bandsMutex, pdMS_TO_TICKS(2)) == pdTRUE) {
+          cfg = g_dspConfig;
+          xSemaphoreGive(g_bandsMutex);
+        } else {
+          cfg = g_dspConfig;
+        }
+
+        float sensMult = 0.2f + (constrain((float)cfg.sensitivity, 1.0f, 100.0f) - 1.0f) * (4.8f / 99.0f);
+        float noiseGateCutoff = (float)cfg.noiseCutoff / 100.0f;
+        float headroomMult = (float)cfg.headroom / 100.0f; // e.g. 1.5x peak margin to prevent moderate whistling clipping
+
+        // Remove DC offset
         float sumSamples = 0.0f;
         for (size_t i = 0; i < samplesRead; i++) {
           float s = (float)(rawSamples[i] >> 8) / 8388608.0f;
@@ -54,7 +68,6 @@ static void audioTask(void *param) {
         float zeroCrossings = 0.0f;
         float prevSample = 0.0f;
 
-        // Band filters
         float sumBass = 0.0f, sumMid = 0.0f, sumTreble = 0.0f;
         static float lpBass = 0.0f, hpTreble = 0.0f;
 
@@ -62,13 +75,11 @@ static void audioTask(void *param) {
           float s = ((float)(rawSamples[i] >> 8) / 8388608.0f) - dcOffset;
           sumEnergy += s * s;
 
-          // Zero-crossing count for pitch frequency estimation
           if (i > 0 && ((s >= 0.0f && prevSample < 0.0f) || (s < 0.0f && prevSample >= 0.0f))) {
             zeroCrossings += 1.0f;
           }
           prevSample = s;
 
-          // 3-Band splitting
           lpBass += (s - lpBass) * 0.12f;                  // ~300Hz LP
           hpTreble += (s - hpTreble) * 0.45f;              // ~2.5kHz HP
           float trebleS = s - hpTreble;
@@ -79,41 +90,56 @@ static void audioTask(void *param) {
           sumTreble += trebleS * trebleS;
         }
 
-        float rmsTotal = sqrtf(sumEnergy / samplesRead) * g_sensitivityMult;
-        float rmsBass = sqrtf(sumBass / samplesRead) * g_sensitivityMult;
-        float rmsMid = sqrtf(sumMid / samplesRead) * g_sensitivityMult;
-        float rmsTreble = sqrtf(sumTreble / samplesRead) * g_sensitivityMult;
+        float rmsTotal = sqrtf(sumEnergy / samplesRead) * sensMult;
+        float rmsBass = sqrtf(sumBass / samplesRead) * sensMult;
+        float rmsMid = sqrtf(sumMid / samplesRead) * sensMult;
+        float rmsTreble = sqrtf(sumTreble / samplesRead) * sensMult;
 
-        // Dynamic AGC with floor
-        if (rmsTotal > maxPeak) {
-          maxPeak = rmsTotal;
+        // Dynamic AGC with Headroom Margin (prevents early saturation clipping)
+        float currentPeak = rmsTotal * headroomMult;
+        if (currentPeak > maxPeak) {
+          maxPeak = currentPeak;
         } else {
-          maxPeak = fmaxf(0.02f, maxPeak * 0.992f);
+          maxPeak = fmaxf(0.04f, maxPeak * 0.994f); // Slow decay
         }
 
-        float normTotal = constrain(rmsTotal / maxPeak, 0.0f, 1.0f);
-        float normBass = constrain(rmsBass / maxPeak, 0.0f, 1.0f);
-        float normMid = constrain(rmsMid / maxPeak, 0.0f, 1.0f);
-        float normTreble = constrain(rmsTreble / maxPeak, 0.0f, 1.0f);
+        // Apply Universal Noise Floor Gate
+        auto applyNoiseGate = [noiseGateCutoff](float val) -> float {
+          if (val < noiseGateCutoff) return 0.0f;
+          return constrain((val - noiseGateCutoff) / (1.0f - noiseGateCutoff), 0.0f, 1.0f);
+        };
 
-        // Beat detection
+        float normTotal = applyNoiseGate(rmsTotal / maxPeak);
+        float normBass = applyNoiseGate(rmsBass / maxPeak);
+        float normMid = applyNoiseGate(rmsMid / maxPeak);
+        float normTreble = applyNoiseGate(rmsTreble / maxPeak);
+
+        // Perceptual Logarithmic (dB) volume curve
+        float logAmp = (normTotal > 0.001f) ? (log10f(1.0f + 9.0f * normTotal)) : 0.0f;
+        logAmp = constrain(logAmp, 0.0f, 1.0f);
+
+        // Configurable Beat Detection Sensitivity
         bassAvg += (normBass - bassAvg) * 0.1f;
-        bool isBeat = (normBass > (bassAvg * 1.45f)) && (normBass > 0.35f);
+        float beatMultiplier = 1.10f + ((100.0f - cfg.beatSens) / 100.0f) * 0.80f; // 10..90 maps to 1.18x .. 1.82x
+        bool isBeat = (normBass > (bassAvg * beatMultiplier)) && (normBass > 0.25f);
 
-        // Calculate estimated pitch frequency (Hz) from Zero Crossings:
-        // Freq (Hz) = (ZeroCrossings / 2) * (SampleRate / SampleCount)
+        // Zero-Crossing Pitch Frequency Calculation
         float estFreqHz = (zeroCrossings * 0.5f) * (config::kAudioSampleRate / (float)samplesRead);
 
-        // Map pitch frequency to smooth continuous Hue (0.0f Red to 0.75f Purple)
-        // 100Hz (Bass) -> 0.0 (Red), 800Hz (Mids) -> 0.33 (Green), 2200Hz+ (Whistle/High Pitch) -> 0.66 (Blue)
+        // Pitch Range Bounds (e.g. 120 Hz to 2400 Hz)
+        float pitchLow = (float)cfg.pitchLowHz;
+        float pitchHigh = (float)fmaxf((float)cfg.pitchLowHz + 200.0f, (float)cfg.pitchHighHz);
+
         float targetHue = smoothedHue;
-        if (normTotal > 0.05f) { // Noise gate
-          float freqNorm = constrain((estFreqHz - 120.0f) / 2400.0f, 0.0f, 1.0f);
+        if (normTotal > 0.02f) {
+          float freqNorm = constrain((estFreqHz - pitchLow) / (pitchHigh - pitchLow), 0.0f, 1.0f);
           targetHue = freqNorm * 0.75f; // Red -> Yellow -> Green -> Cyan -> Blue -> Purple
         }
 
-        // Exponential low-pass temporal smoothing filter to eliminate flicker
-        smoothedHue += (targetHue - smoothedHue) * 0.08f;
+        // Pitch Glide Temporal Smoothness
+        float pitchAlpha = (float)cfg.pitchSmooth / 100.0f;
+        pitchAlpha = constrain(pitchAlpha, 0.01f, 0.30f);
+        smoothedHue += (targetHue - smoothedHue) * pitchAlpha;
         smoothedHue = fmodf(smoothedHue, 1.0f);
         if (smoothedHue < 0.0f) smoothedHue += 1.0f;
 
@@ -122,6 +148,7 @@ static void audioTask(void *param) {
           g_currentBands.mid = normMid;
           g_currentBands.treble = normTreble;
           g_currentBands.totalAmp = normTotal;
+          g_currentBands.logAmp = logAmp;
           g_currentBands.beat = isBeat;
           g_currentBands.dominantHue = smoothedHue;
           xSemaphoreGive(g_bandsMutex);
@@ -158,7 +185,6 @@ void init(uint8_t pinBclk, uint8_t pinWs, uint8_t pinDin) {
           },
       },
   };
-  // Select left channel for INMP441 (L/R pin grounded)
   std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
 
   err = i2s_channel_init_std_mode(rx_handle, &std_cfg);

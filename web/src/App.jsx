@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Power, Sun, Palette, Settings, X, Wifi, Cpu, Activity, Upload, CheckCircle, AlertCircle, Music, Volume2, SlidersHorizontal, Zap, Sliders } from 'lucide-react';
+import { Power, Sun, Palette, Settings, X, Cpu, Upload, CheckCircle, AlertCircle, Music, SlidersHorizontal, Zap, Radio, Activity, Volume2 } from 'lucide-react';
 
 const RGB_SWATCHES = [
   { name: 'Red', r: 255, g: 0, b: 0 },
@@ -30,10 +30,10 @@ const BASIC_EFFECTS = [
 ];
 
 const MUSIC_PROFILES = [
-  { id: 'music_spectrum', label: '🎵 Spectrum (R=Bass, G=Mid, B=Treb)', desc: 'Direct 3-band frequency energy channel mapping' },
+  { id: 'music_spectrum', label: '🎵 Spectrum (RGB Bands)', desc: 'R=Bass (20-250Hz), G=Mid, B=Treble direct energy mapping' },
   { id: 'music_pulse', label: '🥁 Beat Pulse', desc: 'Strobe flash triggered dynamically on transient bass beats' },
-  { id: 'music_amplitude', label: '🔊 Amplitude Intensity', desc: 'Volume-proportional master brightness modulation' },
-  { id: 'music_freq_hue', label: '🌈 Pitch-to-Hue', desc: 'Zero-crossing continuous pitch frequency color tracking' },
+  { id: 'music_amplitude', label: '🔊 Amplitude Modulation', desc: 'Volume-proportional master brightness intensity' },
+  { id: 'music_freq_hue', label: '🌈 Pitch-to-Hue (Zero-Crossing)', desc: 'Continuous pitch frequency zero-crossing color tracking' },
   { id: 'music_chill', label: '🌙 Ambient Chill', desc: 'Low-pass filtered soothing room audio ambience' },
 ];
 
@@ -51,7 +51,15 @@ export default function App() {
     speed: 50,
     musicSensitivity: 50,
     noiseCutoff: 8,
+    headroom: 150,
+    responseAgility: 50,
     beatSens: 45,
+    beatDecay: 180,
+    pitchLowHz: 120,
+    pitchHighHz: 2400,
+    pitchSmooth: 8,
+    ambientGlow: 0,
+    useLogScale: true,
   });
 
   const [wsConnected, setWsConnected] = useState(false);
@@ -59,11 +67,10 @@ export default function App() {
   const [deviceInfo, setDeviceInfo] = useState({ ip: '...', ssid: '...', mode: '...' });
   const [otaFile, setOtaFile] = useState(null);
   const [otaProgress, setOtaProgress] = useState(0);
-  const [otaStatus, setOtaStatus] = useState(''); // 'uploading', 'success', 'error'
+  const [otaStatus, setOtaStatus] = useState('');
   const wsRef = useRef(null);
   const canvasRef = useRef(null);
 
-  // Auto Connect WebSocket
   useEffect(() => {
     let wsUrl = `ws://${window.location.host}/ws`;
     if (window.location.host.includes('localhost') || window.location.host.includes('5173')) {
@@ -97,7 +104,15 @@ export default function App() {
           speed: data.speed ?? prev.speed,
           musicSensitivity: data.musicSensitivity ?? prev.musicSensitivity,
           noiseCutoff: data.noiseCutoff ?? prev.noiseCutoff,
+          headroom: data.headroom ?? prev.headroom,
+          responseAgility: data.responseAgility ?? prev.responseAgility,
           beatSens: data.beatSens ?? prev.beatSens,
+          beatDecay: data.beatDecay ?? prev.beatDecay,
+          pitchLowHz: data.pitchLowHz ?? prev.pitchLowHz,
+          pitchHighHz: data.pitchHighHz ?? prev.pitchHighHz,
+          pitchSmooth: data.pitchSmooth ?? prev.pitchSmooth,
+          ambientGlow: data.ambientGlow ?? prev.ambientGlow,
+          useLogScale: data.useLogScale ?? prev.useLogScale,
         }));
       }
     } catch (e) {
@@ -165,11 +180,8 @@ export default function App() {
     xhr.send(formData);
   };
 
-  // Convert Warmth (0..100) to Kelvin (6500K..2000K)
   const warmthToKelvin = (w) => Math.round(6500 - (w / 100) * 4500);
-  const kelvinToWarmth = (k) => Math.round(((6500 - k) / 4500) * 100);
 
-  // Draw Color Wheel Canvas when Color tab active
   useEffect(() => {
     if (activeTab !== 'color') return;
     const canvas = canvasRef.current;
@@ -349,7 +361,7 @@ export default function App() {
 
             <section className="instrument-card">
               <div className="card-title">
-                <span>Master Brightness</span>
+                <span>Master Brightness Ceiling</span>
                 <span className="slider-value">{Math.round((state.brightness / 255) * 100)}%</span>
               </div>
               <div className="slider-group">
@@ -462,9 +474,10 @@ export default function App() {
           </>
         )}
 
-        {/* TAB 3: DEDICATED MUSIC SYNC PAGE */}
+        {/* TAB 3: DEDICATED MUSIC SYNC PAGE WITH PROFILE-SPECIFIC PANELS */}
         {activeTab === 'music' && (
           <>
+            {/* Music Profile Selector */}
             <section className="instrument-card">
               <div className="card-title">
                 <span>INMP441 Music Sync Profiles</span>
@@ -486,15 +499,15 @@ export default function App() {
               </div>
             </section>
 
-            <div className="grid-two-col">
-              {/* Audio DSP Processing Controls */}
-              <section className="instrument-card">
-                <div className="card-title">
-                  <span>Audio DSP Gain & Noise Gate</span>
-                  <SlidersHorizontal size={16} color="#94a3b8" />
-                </div>
+            {/* Global Audio Pipeline Panel (Always Active for Audio) */}
+            <section className="instrument-card">
+              <div className="card-title">
+                <span>Global Audio Pipeline Controls</span>
+                <SlidersHorizontal size={16} color="#94a3b8" />
+              </div>
 
-                <div className="slider-group" style={{ marginTop: '12px' }}>
+              <div className="grid-two-col" style={{ marginTop: '12px', gap: '20px' }}>
+                <div className="slider-group">
                   <div className="slider-header">
                     <span>Microphone Preamp Gain / Sensitivity</span>
                     <span className="slider-value">{state.musicSensitivity}%</span>
@@ -507,70 +520,270 @@ export default function App() {
                     onChange={(e) => updateState({ musicSensitivity: parseInt(e.target.value) })}
                   />
                   <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-                    Adjusts INMP441 digital microphone AGC multiplier to match room sound pressure level.
+                    Adjusts INMP441 MEMS microphone gain multiplier to match room sound pressure level.
                   </p>
                 </div>
 
-                <div className="slider-group" style={{ marginTop: '20px' }}>
+                <div className="slider-group">
                   <div className="slider-header">
-                    <span>Low-End Cutoff Noise Gate</span>
-                    <span className="slider-value">{state.noiseCutoff ?? 8}%</span>
+                    <span>Universal Noise Floor Cutoff Gate</span>
+                    <span className="slider-value">{state.noiseCutoff}%</span>
                   </div>
                   <input
                     type="range"
                     min="0"
                     max="25"
-                    value={state.noiseCutoff ?? 8}
+                    value={state.noiseCutoff}
                     onChange={(e) => updateState({ noiseCutoff: parseInt(e.target.value) })}
                   />
                   <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-                    Suppresses low ambient room noise floor to eliminate dim-flicker during quiet pauses.
+                    Cuts off low ambient room noise floor cleanly to eliminate dim-flickering during quiet pauses.
                   </p>
                 </div>
-              </section>
+              </div>
 
-              {/* Advanced Beat & Strobe Controls */}
-              <section className="instrument-card">
-                <div className="card-title">
-                  <span>Beat Detection & Transient Trigger</span>
-                  <Zap size={16} color="#94a3b8" />
-                </div>
-
-                <div className="slider-group" style={{ marginTop: '12px' }}>
+              <div className="grid-two-col" style={{ marginTop: '20px', gap: '20px' }}>
+                <div className="slider-group">
                   <div className="slider-header">
-                    <span>Beat Threshold Sensitivity</span>
-                    <span className="slider-value">{state.beatSens ?? 45}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="10"
-                    max="90"
-                    value={state.beatSens ?? 45}
-                    onChange={(e) => updateState({ beatSens: parseInt(e.target.value) })}
-                  />
-                  <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-                    Controls transient peak detection multiplier for Beat Pulse strobe triggers.
-                  </p>
-                </div>
-
-                <div className="slider-group" style={{ marginTop: '20px' }}>
-                  <div className="slider-header">
-                    <span>Smooth Transition Speed</span>
-                    <span className="slider-value">{state.speed}%</span>
+                    <span>Global PWM Response Agility</span>
+                    <span className="slider-value">{state.responseAgility}%</span>
                   </div>
                   <input
                     type="range"
                     min="1"
                     max="100"
-                    value={state.speed}
-                    onChange={(e) => updateState({ speed: parseInt(e.target.value) })}
+                    value={state.responseAgility}
+                    onChange={(e) => updateState({ responseAgility: parseInt(e.target.value) })}
                   />
                   <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-                    Adjusts exponential decay rate and color wheel cycle rate for music profiles.
+                    Rate limits PWM change speed (1% = ultra smooth, 100% = instant responsive).
+                  </p>
+                </div>
+
+                <div className="slider-group">
+                  <div className="slider-header">
+                    <span>Perceptual Volume Scaling Curve</span>
+                    <span className="slider-value">{state.useLogScale ? 'LOGARITHMIC (dB)' : 'LINEAR'}</span>
+                  </div>
+                  <button
+                    className={`effect-btn ${state.useLogScale ? 'active' : ''}`}
+                    onClick={() => updateState({ useLogScale: !state.useLogScale })}
+                    style={{ padding: '8px 16px', marginTop: '4px' }}
+                  >
+                    {state.useLogScale ? 'Switch to Linear Scale' : 'Switch to Logarithmic (dB) Scale'}
+                  </button>
+                  <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                    Logarithmic dB scaling matches human ear loudness perception.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* DYNAMIC PROFILE CONTROL PANELS */}
+
+            {/* PANEL 1: SPECTRUM */}
+            {state.effect === 'music_spectrum' && (
+              <section className="instrument-card">
+                <div className="card-title">
+                  <span>🎵 Spectrum Profile Controls</span>
+                  <Activity size={16} color="#3b82f6" />
+                </div>
+                <div className="slider-group" style={{ marginTop: '12px' }}>
+                  <div className="slider-header">
+                    <span>Headroom Margin / Peak Compressor</span>
+                    <span className="slider-value">{state.headroom}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="100"
+                    max="250"
+                    value={state.headroom}
+                    onChange={(e) => updateState({ headroom: parseInt(e.target.value) })}
+                  />
+                  <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                    Prevents moderate volume hits from clipping/saturating to 100% maximum brightness.
                   </p>
                 </div>
               </section>
-            </div>
+            )}
+
+            {/* PANEL 2: BEAT PULSE */}
+            {state.effect === 'music_pulse' && (
+              <section className="instrument-card">
+                <div className="card-title">
+                  <span>🥁 Beat Pulse Profile Controls</span>
+                  <Zap size={16} color="#3b82f6" />
+                </div>
+                <div className="grid-two-col" style={{ marginTop: '12px', gap: '20px' }}>
+                  <div className="slider-group">
+                    <div className="slider-header">
+                      <span>Beat Sensitivity Threshold</span>
+                      <span className="slider-value">{state.beatSens}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="10"
+                      max="90"
+                      value={state.beatSens}
+                      onChange={(e) => updateState({ beatSens: parseInt(e.target.value) })}
+                    />
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                      Peak-over-average multiplier for bass drum beat detection triggers.
+                    </p>
+                  </div>
+
+                  <div className="slider-group">
+                    <div className="slider-header">
+                      <span>Pulse Decay Tail Speed</span>
+                      <span className="slider-value">{state.beatDecay} ms</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="20"
+                      max="500"
+                      value={state.beatDecay}
+                      onChange={(e) => updateState({ beatDecay: parseInt(e.target.value) })}
+                    />
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                      Fast drop-off vs slow fading tail after a detected beat hit.
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* PANEL 3: AMPLITUDE MODULATION */}
+            {state.effect === 'music_amplitude' && (
+              <section className="instrument-card">
+                <div className="card-title">
+                  <span>🔊 Amplitude Dynamic Range Controls</span>
+                  <Volume2 size={16} color="#3b82f6" />
+                </div>
+                <div className="grid-two-col" style={{ marginTop: '12px', gap: '20px' }}>
+                  <div className="slider-group">
+                    <div className="slider-header">
+                      <span>Headroom Margin (Saturation Prevention)</span>
+                      <span className="slider-value">{state.headroom}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="100"
+                      max="250"
+                      value={state.headroom}
+                      onChange={(e) => updateState({ headroom: parseInt(e.target.value) })}
+                    />
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                      Higher headroom keeps moderate volume in the middle dynamic range (prevents early maxing out).
+                    </p>
+                  </div>
+
+                  <div className="slider-group">
+                    <div className="slider-header">
+                      <span>Ambient Background Glow Floor</span>
+                      <span className="slider-value">{state.ambientGlow}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="30"
+                      value={state.ambientGlow}
+                      onChange={(e) => updateState({ ambientGlow: parseInt(e.target.value) })}
+                    />
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                      Minimum background light level maintained during silence (0% = pure blackout).
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* PANEL 4: PITCH-TO-HUE */}
+            {state.effect === 'music_freq_hue' && (
+              <section className="instrument-card">
+                <div className="card-title">
+                  <span>🌈 Pitch-to-Hue Zero-Crossing Controls</span>
+                  <Radio size={16} color="#3b82f6" />
+                </div>
+                <div className="grid-two-col" style={{ marginTop: '12px', gap: '20px' }}>
+                  <div className="slider-group">
+                    <div className="slider-header">
+                      <span>Low Pitch Bound (🔴 Red)</span>
+                      <span className="slider-value">{state.pitchLowHz} Hz</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="80"
+                      max="500"
+                      value={state.pitchLowHz}
+                      onChange={(e) => updateState({ pitchLowHz: parseInt(e.target.value) })}
+                    />
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                      Frequency floor mapped to Red (humming/bass range).
+                    </p>
+                  </div>
+
+                  <div className="slider-group">
+                    <div className="slider-header">
+                      <span>High Pitch Whistle Bound (🔵 Blue/Purple)</span>
+                      <span className="slider-value">{state.pitchHighHz} Hz</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1000"
+                      max="3500"
+                      value={state.pitchHighHz}
+                      onChange={(e) => updateState({ pitchHighHz: parseInt(e.target.value) })}
+                    />
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                      Upper frequency bound mapped to Blue/Purple (whistling range).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="slider-group" style={{ marginTop: '20px' }}>
+                  <div className="slider-header">
+                    <span>Pitch Tracking Smoothness / Glide Rate</span>
+                    <span className="slider-value">{state.pitchSmooth}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="30"
+                    value={state.pitchSmooth}
+                    onChange={(e) => updateState({ pitchSmooth: parseInt(e.target.value) })}
+                  />
+                  <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                    Controls color glide rate when whistle pitch changes (prevents pitch chatter).
+                  </p>
+                </div>
+              </section>
+            )}
+
+            {/* PANEL 5: AMBIENT CHILL */}
+            {state.effect === 'music_chill' && (
+              <section className="instrument-card">
+                <div className="card-title">
+                  <span>🌙 Ambient Chill Controls</span>
+                  <Sun size={16} color="#3b82f6" />
+                </div>
+                <div className="slider-group" style={{ marginTop: '12px' }}>
+                  <div className="slider-header">
+                    <span>Minimum Background Warmth Glow</span>
+                    <span className="slider-value">{state.ambientGlow}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="30"
+                    value={state.ambientGlow}
+                    onChange={(e) => updateState({ ambientGlow: parseInt(e.target.value) })}
+                  />
+                  <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                    Maintains cozy background glow even during total silence.
+                  </p>
+                </div>
+              </section>
+            )}
           </>
         )}
 

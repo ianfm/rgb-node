@@ -29,14 +29,22 @@ static String serializeStateJson(const LightState &st) {
   doc["g"] = st.g;
   doc["b"] = st.b;
   doc["brightness"] = st.brightness;
-  doc["lightMode"] = st.mode;
+  doc["mode"] = st.mode;
   doc["colorTemp"] = st.colorTemp;
   doc["warmth"] = st.warmth;
   doc["effect"] = st.effect;
   doc["speed"] = st.speed;
   doc["musicSensitivity"] = st.musicSensitivity;
   doc["noiseCutoff"] = st.noiseCutoff;
+  doc["headroom"] = st.headroom;
+  doc["responseAgility"] = st.responseAgility;
   doc["beatSens"] = st.beatSens;
+  doc["beatDecay"] = st.beatDecay;
+  doc["pitchLowHz"] = st.pitchLowHz;
+  doc["pitchHighHz"] = st.pitchHighHz;
+  doc["pitchSmooth"] = st.pitchSmooth;
+  doc["ambientGlow"] = st.ambientGlow;
+  doc["useLogScale"] = st.useLogScale;
   String out;
   serializeJson(doc, out);
   return out;
@@ -55,14 +63,22 @@ static void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
         if (!doc["g"].isNull()) g_state.g = doc["g"].as<uint8_t>();
         if (!doc["b"].isNull()) g_state.b = doc["b"].as<uint8_t>();
         if (!doc["brightness"].isNull()) g_state.brightness = doc["brightness"].as<uint8_t>();
-        if (!doc["lightMode"].isNull()) g_state.mode = doc["lightMode"].as<String>();
+        if (!doc["mode"].isNull()) g_state.mode = doc["mode"].as<String>();
         if (!doc["colorTemp"].isNull()) g_state.colorTemp = doc["colorTemp"].as<uint16_t>();
         if (!doc["warmth"].isNull()) g_state.warmth = doc["warmth"].as<uint8_t>();
         if (!doc["effect"].isNull()) g_state.effect = doc["effect"].as<String>();
         if (!doc["speed"].isNull()) g_state.speed = doc["speed"].as<uint8_t>();
         if (!doc["musicSensitivity"].isNull()) g_state.musicSensitivity = doc["musicSensitivity"].as<uint8_t>();
         if (!doc["noiseCutoff"].isNull()) g_state.noiseCutoff = doc["noiseCutoff"].as<uint8_t>();
+        if (!doc["headroom"].isNull()) g_state.headroom = doc["headroom"].as<uint8_t>();
+        if (!doc["responseAgility"].isNull()) g_state.responseAgility = doc["responseAgility"].as<uint8_t>();
         if (!doc["beatSens"].isNull()) g_state.beatSens = doc["beatSens"].as<uint8_t>();
+        if (!doc["beatDecay"].isNull()) g_state.beatDecay = doc["beatDecay"].as<uint16_t>();
+        if (!doc["pitchLowHz"].isNull()) g_state.pitchLowHz = doc["pitchLowHz"].as<uint16_t>();
+        if (!doc["pitchHighHz"].isNull()) g_state.pitchHighHz = doc["pitchHighHz"].as<uint16_t>();
+        if (!doc["pitchSmooth"].isNull()) g_state.pitchSmooth = doc["pitchSmooth"].as<uint8_t>();
+        if (!doc["ambientGlow"].isNull()) g_state.ambientGlow = doc["ambientGlow"].as<uint8_t>();
+        if (!doc["useLogScale"].isNull()) g_state.useLogScale = doc["useLogScale"].as<bool>();
 
         if (g_stateCallback) {
           g_stateCallback(g_state);
