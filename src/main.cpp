@@ -1,10 +1,10 @@
-// 3-channel PWM RGB LED driver for ESP32-C3 Super Mini
-// Includes Web Server, WebSockets, NVS State Persistence, 12-Bit PWM, Gamma 2.8, Dynamic Effects, and MQTT Auto-Discovery.
+// Includes Web Server, WebSockets, NVS State Persistence, 12-Bit PWM, Gamma 2.8, Dynamic Effects, INMP441 Music Sync, and Home Assistant MQTT.
 
 #include <Arduino.h>
 #include <Preferences.h>
 #include <cmath>
 
+#include "audio_dsp.h"
 #include "config.h"
 #include "light_core.h"
 #include "web_server.h"
@@ -35,6 +35,9 @@ static void saveStateToNvs() {
   preferences.putUChar("warmth", g_state.warmth);
   preferences.putString("effect", g_state.effect);
   preferences.putUChar("speed", g_state.speed);
+  preferences.putUChar("musicSens", g_state.musicSensitivity);
+  preferences.putUChar("noiseCut", g_state.noiseCutoff);
+  preferences.putUChar("beatSens", g_state.beatSens);
   preferences.end();
 }
 
@@ -51,6 +54,9 @@ static void loadStateFromNvs() {
   g_state.warmth = preferences.getUChar("warmth", 84);
   g_state.effect = preferences.getString("effect", "static");
   g_state.speed = preferences.getUChar("speed", 50);
+  g_state.musicSensitivity = preferences.getUChar("musicSens", 50);
+  g_state.noiseCutoff = preferences.getUChar("noiseCut", 8);
+  g_state.beatSens = preferences.getUChar("beatSens", 45);
   preferences.end();
 }
 
@@ -76,6 +82,8 @@ void setup() {
   g_mqtt = new mqtt_provider::MqttProvider(&g_core, mqttCfg);
   g_mqtt->init();
 
+  audio_dsp::init(config::kPinI2sBclk, config::kPinI2sWs, config::kPinI2sDin);
+
   web_server::init(
       [](const web_server::LightState &newState) {
         g_state = newState;
@@ -98,9 +106,108 @@ void loop() {
   if (deltaSec < 0.001f) deltaSec = 0.001f;
   if (deltaSec > 0.1f) deltaSec = 0.1f;
 
-  float targetR = 0.0f, targetG = 0.0f, targetB = 0.0f;
-  g_core.getTargetRgb(targetR, targetG, targetB, deltaSec);
+  static float animHue = 0.0f;
+  static float breathePhase = 0.0f;
+  static bool strobeState = false;
+  static float strobeTimer = 0.0f;
+  static float pulseDecay = 0.0f;
 
+  audio_dsp::setSensitivity(g_state.musicSensitivity);
+  audio_dsp::AudioBands bands = audio_dsp::getBands();
+
+  float targetR = g_state.r / 255.0f;
+  float targetG = g_state.g / 255.0f;
+  float targetB = g_state.b / 255.0f;
+
+  if (g_state.power) {
+    if (g_state.effect == "hue_cycle") {
+      const float cycleFreqHz = 0.02f + (g_state.speed - 1) * (0.48f / 99.0f);
+      animHue += deltaSec * cycleFreqHz;
+      if (animHue >= 1.0f) animHue -= 1.0f;
+      light_core::hueToRgbFloat(animHue, targetR, targetG, targetB);
+    } else if (g_state.effect == "breathe") {
+      const float breatheFreqHz = 0.1f + (g_state.speed - 1) * (1.9f / 99.0f);
+      breathePhase += deltaSec * breatheFreqHz * 6.2831853f;
+      if (breathePhase >= 6.2831853f) breathePhase -= 6.2831853f;
+      const float mult = (sinf(breathePhase) + 1.0f) * 0.5f;
+      targetR *= mult;
+      targetG *= mult;
+      targetB *= mult;
+    } else if (g_state.effect == "candle") {
+      static float candleFlicker = 1.0f;
+      static float candleTarget = 1.0f;
+      static float candleTimer = 0.0f;
+      candleTimer += deltaSec;
+      const float changeInterval = 0.08f + (100 - g_state.speed) * (0.25f / 99.0f);
+      if (candleTimer >= changeInterval) {
+        candleTimer = 0.0f;
+        candleTarget = random(60, 100) / 100.0f;
+      }
+      candleFlicker += (candleTarget - candleFlicker) * 0.15f;
+      targetR *= candleFlicker;
+      targetG *= candleFlicker;
+      targetB *= candleFlicker;
+    } else if (g_state.effect == "strobe") {
+      const float strobeInterval = 0.3f - (g_state.speed - 1) * (0.28f / 99.0f);
+      strobeTimer += deltaSec;
+      if (strobeTimer >= strobeInterval) {
+        strobeTimer = 0.0f;
+        strobeState = !strobeState;
+      }
+      if (!strobeState) {
+        targetR = 0.0f;
+        targetG = 0.0f;
+        targetB = 0.0f;
+      }
+    } else if (g_state.effect == "music_spectrum") {
+      targetR = bands.bass;
+      targetG = bands.mid;
+      targetB = bands.treble;
+    } else if (g_state.effect == "music_pulse") {
+      const float cycleFreqHz = 0.02f + (g_state.speed - 1) * (0.48f / 99.0f);
+      animHue += deltaSec * cycleFreqHz;
+      if (animHue >= 1.0f) animHue -= 1.0f;
+      light_core::hueToRgbFloat(animHue, targetR, targetG, targetB);
+
+      if (bands.beat) {
+        pulseDecay = 1.0f;
+      } else {
+        pulseDecay = fmaxf(0.05f, pulseDecay * 0.88f);
+      }
+      targetR *= pulseDecay;
+      targetG *= pulseDecay;
+      targetB *= pulseDecay;
+    } else if (g_state.effect == "music_amplitude") {
+      const float cutoff = g_state.noiseCutoff / 100.0f;
+      float cleanAmp = (bands.totalAmp < cutoff) ? 0.0f : constrain((bands.totalAmp - cutoff) / (1.0f - cutoff), 0.0f, 1.0f);
+      targetR *= cleanAmp;
+      targetG *= cleanAmp;
+      targetB *= cleanAmp;
+    } else if (g_state.effect == "music_freq_hue") {
+      const float cutoff = g_state.noiseCutoff / 100.0f;
+      float cleanAmp = (bands.totalAmp < cutoff) ? 0.0f : constrain((bands.totalAmp - cutoff) / (1.0f - cutoff), 0.0f, 1.0f);
+      light_core::hueToRgbFloat(bands.dominantHue, targetR, targetG, targetB);
+      targetR *= cleanAmp;
+      targetG *= cleanAmp;
+      targetB *= cleanAmp;
+    } else if (g_state.effect == "music_chill") {
+      const float cutoff = g_state.noiseCutoff / 100.0f;
+      float cleanAmp = (bands.totalAmp < cutoff) ? 0.0f : constrain((bands.totalAmp - cutoff) / (1.0f - cutoff), 0.0f, 1.0f);
+      float spectR = bands.bass;
+      float spectG = bands.mid;
+      float spectB = bands.treble;
+      targetR = targetR * 0.4f + spectR * 0.6f;
+      targetG = targetG * 0.4f + spectG * 0.6f;
+      targetB = targetB * 0.4f + spectB * 0.6f;
+      targetR *= (0.2f + 0.8f * cleanAmp);
+      targetG *= (0.2f + 0.8f * cleanAmp);
+      targetB *= (0.2f + 0.8f * cleanAmp);
+    }
+  } else {
+    targetR = 0.0f;
+    targetG = 0.0f;
+    targetB = 0.0f;
+  }
   const float brightMult = (g_state.power ? g_state.brightness : 0) / 255.0f;
   const float finalR = targetR * brightMult;
   const float finalG = targetG * brightMult;

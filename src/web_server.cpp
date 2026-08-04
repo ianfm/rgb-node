@@ -34,6 +34,9 @@ static String serializeStateJson(const LightState &st) {
   doc["warmth"] = st.warmth;
   doc["effect"] = st.effect;
   doc["speed"] = st.speed;
+  doc["musicSensitivity"] = st.musicSensitivity;
+  doc["noiseCutoff"] = st.noiseCutoff;
+  doc["beatSens"] = st.beatSens;
   String out;
   serializeJson(doc, out);
   return out;
@@ -57,6 +60,9 @@ static void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
         if (!doc["warmth"].isNull()) g_state.warmth = doc["warmth"].as<uint8_t>();
         if (!doc["effect"].isNull()) g_state.effect = doc["effect"].as<String>();
         if (!doc["speed"].isNull()) g_state.speed = doc["speed"].as<uint8_t>();
+        if (!doc["musicSensitivity"].isNull()) g_state.musicSensitivity = doc["musicSensitivity"].as<uint8_t>();
+        if (!doc["noiseCutoff"].isNull()) g_state.noiseCutoff = doc["noiseCutoff"].as<uint8_t>();
+        if (!doc["beatSens"].isNull()) g_state.beatSens = doc["beatSens"].as<uint8_t>();
 
         if (g_stateCallback) {
           g_stateCallback(g_state);
@@ -178,6 +184,7 @@ void init(StateCallback onStateChange, const LightState &initialState) {
     doc["warmth"] = g_state.warmth;
     doc["effect"] = g_state.effect;
     doc["speed"] = g_state.speed;
+    doc["musicSensitivity"] = g_state.musicSensitivity;
     doc["ip"] = (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString()
                                                 : WiFi.softAPIP().toString();
     doc["ssid"] = (WiFi.status() == WL_CONNECTED) ? WiFi.SSID() : config::kApSsid;
@@ -202,6 +209,7 @@ void init(StateCallback onStateChange, const LightState &initialState) {
           if (!doc["warmth"].isNull()) g_state.warmth = doc["warmth"].as<uint8_t>();
           if (!doc["effect"].isNull()) g_state.effect = doc["effect"].as<String>();
           if (!doc["speed"].isNull()) g_state.speed = doc["speed"].as<uint8_t>();
+          if (!doc["musicSensitivity"].isNull()) g_state.musicSensitivity = doc["musicSensitivity"].as<uint8_t>();
 
           if (g_stateCallback) {
             g_stateCallback(g_state);

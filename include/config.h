@@ -27,7 +27,7 @@ constexpr uint8_t kPinBlue = 7;
 // UART0 TX).
 constexpr uint8_t kPinBrightness = 1;
 
-// INMP441 I2S Microphone Pin Definitions
+// INMP441 I2S Digital Microphone Pins
 constexpr uint8_t kPinI2sBclk = 2; // Bit Clock / SCK
 constexpr uint8_t kPinI2sWs   = 3; // Word Select / LCK / WS
 constexpr uint8_t kPinI2sDin  = 4; // Data Out from Mic (SD) -> ESP32 Data In

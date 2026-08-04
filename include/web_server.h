@@ -15,8 +15,11 @@ struct LightState {
   String mode = "color";     // "color" or "white"
   uint16_t colorTemp = 2700; // 2000K .. 6500K
   uint8_t warmth = 84;       // 0% (6500K cool) .. 100% (2000K warm)
-  String effect = "static";  // "static", "hue_cycle", "breathe", "candle", "strobe"
+  String effect = "static";  // "static", "hue_cycle", "breathe", "candle", "strobe", "music_spectrum", "music_pulse", "music_amplitude", "music_freq_hue", "music_chill"
   uint8_t speed = 50;        // 1..100
+  uint8_t musicSensitivity = 50; // 1..100
+  uint8_t noiseCutoff = 8;       // 0..25 (%)
+  uint8_t beatSens = 45;         // 10..90 (%)
 };
 
 using StateCallback = std::function<void(const LightState &state)>;
