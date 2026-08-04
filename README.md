@@ -1,6 +1,24 @@
 # rgb-node
 
-3-channel PWM RGB LED driver firmware for the ESP32-C3 Super Mini.
+3-channel PWM RGB LED driver firmware with INMP441 I2S Music Sync and Home Assistant MQTT for the ESP32-C3 Super Mini.
+
+---
+
+## Hardware Pinout Map
+
+| ESP32-C3 Pin | Function | Peripheral / Description |
+| :--- | :--- | :--- |
+| `GPIO 5` | PWM Red Output | Red LED Channel PWM (5 kHz, 12-bit) |
+| `GPIO 6` | PWM Green Output | Green LED Channel PWM (5 kHz, 12-bit) |
+| `GPIO 7` | PWM Blue Output | Blue LED Channel PWM (5 kHz, 12-bit) |
+| `GPIO 8` | Onboard LED | Active-Low LED (mirrors Red PWM) |
+| `GPIO 2` | I2S `BCLK` / `SCK` | INMP441 MEMS Mic Serial Bit Clock |
+| `GPIO 3` | I2S `WS` / `LCK` | INMP441 MEMS Mic Word Select / Frame Clock |
+| `GPIO 4` | I2S `SD` / `DIN` | INMP441 MEMS Mic Data Out $\rightarrow$ ESP32 Data In |
+| `GPIO 1` | ADC1 Input | Optional Hardware Potentiometer Wiper (`RGBNODE_BRIGHTNESS_POT = 0`) |
+| `3.3V` / `GND` | Power Rail | INMP441 Power (Mic L/R tied to GND for Left Channel) |
+
+---
 
 ## Prerequisites
 
@@ -13,36 +31,39 @@
 git clone <repo-url> rgb-node
 cd rgb-node
 make setup     # one-time: installs PlatformIO via uv
-make flash     # builds and uploads over USB
-make monitor   # watch serial output (Ctrl+C to exit)
+make build     # builds C++ firmware
+make ota       # uploads firmware wirelessly over Wi-Fi
 ```
 
 The first build downloads the ESP32 toolchain (a few hundred MB); later builds are fast.
 
-The stock firmware slowly cycles the hue across the R/G/B pins (GPIO 5/6/7 by default — see `include/config.h`) so you can immediately verify the board flashed and the outputs work. Those pins were picked to leave the C3's only ADC inputs (GPIO 0–4) free for analog use. The onboard LED (GPIO8) mirrors the red channel as a no-wiring sanity check.
+## Features & Features Overview
 
-## Brightness pot
+1. **Natural CCT Lighting**: Kelvin scale (2000K to 6500K) with Warmth percentage sliders.
+2. **Decorative RGB**: Continuous HSL color wheel, quick swatches, Rainbow Cycle, Breathe, Candle Flicker, and Strobe.
+3. **INMP441 Music Sync Engine**:
+   - 🎵 Spectrum (RGB Frequency Mapping)
+   - 🥁 Beat Pulse (Transient Bass Beat Trigger)
+   - 🔊 Amplitude Modulation (Dynamic Volume Intensity)
+   - 🌈 Pitch-to-Hue (Zero-Crossing Continuous Pitch Color Tracking)
+   - 🌙 Ambient Chill (Low-Pass Ambient Ambience)
+4. **Home Assistant MQTT Auto-Discovery**: Zero-touch integration via MQTT broadcast.
+5. **OTA Wireless Updates**: Web drag-and-drop or CLI upload.
 
-Overall brightness is set by a potentiometer: outer legs to 3V3 and GND, wiper to **GPIO1**. Any value from ~10 kΩ up is fine. With nothing connected the pin floats and brightness will be arbitrary. The pin must be one of GPIO 0–4 — those are the only usable ADC inputs on the ESP32-C3 (GPIO5's ADC2 is broken by chip erratum, and pins like 20/21 are UART with no ADC at all).
-
-No pot wired up? Build without it with `-DRGBNODE_BRIGHTNESS_POT=0` in `platformio.ini`'s `build_flags` — brightness is fixed at 70% by default and the ADC is left untouched.
-
-## Make targets
+## Make Targets
 
 | Target | Does |
 |---|---|
 | `make setup` | Install PlatformIO with `uv tool install platformio` |
-| `make build` | Compile the firmware |
-| `make flash` | Build + upload (serial port auto-detected) |
+| `make build-web` | Compile React web application (`web/dist`) |
+| `make build` | Compile C++ firmware |
+| `make flash` | Build + upload over USB serial |
+| `make ota` | Build + upload wirelessly over Wi-Fi (`esp32c3-supermini-ota`) |
+| `make upload-fs` | Upload LittleFS web filesystem image over USB serial |
 | `make monitor` | Open the serial monitor at 115200 baud |
 | `make clean` | Remove build artifacts |
 
 ## Troubleshooting
 
-- **Board doesn't show up as a serial port:** hold the BOOT button while plugging in the USB cable to force download mode, then `make flash` again.
-- **Permission denied on `/dev/ttyACM0` (Linux):** add yourself to the serial group and re-login: `sudo usermod -aG dialout $USER` (some distros use `uucp` instead).
-- **No serial output:** the Super Mini uses the C3's native USB; `platformio.ini` already sets `ARDUINO_USB_CDC_ON_BOOT=1` to route `Serial` there — make sure you didn't remove it.
-
-## Hardware note
-
-The C3's GPIOs can only source a few mA — enough for an indicator LED with a resistor, but not LED strips or power LEDs. Drive each channel through a logic-level MOSFET (or an LED driver stage) for real loads.
+- **Windows CLI Note:** Set `PYTHONIOENCODING=utf-8` on Windows for `pio` uploads (`cmd /c "set PYTHONIOENCODING=utf-8 && pio run -t upload"`).
+- **No serial output:** The Super Mini uses the C3's native USB; `platformio.ini` already sets `ARDUINO_USB_CDC_ON_BOOT=1` to route `Serial` there — make sure you didn't remove it.
