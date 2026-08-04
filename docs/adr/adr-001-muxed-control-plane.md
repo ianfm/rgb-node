@@ -30,26 +30,29 @@ We decision to implement a **Multiplexed Modular Control Plane Architecture** ce
 
 ## 3. Architecture Diagram
 
-```
-                       +-----------------------------------+
-                       |         Physical Hardware         |
-                       | ESP32-C3 PWM (GPIO 5,6,7) Gamma2.8|
-                       +-----------------------------------+
-                                         ^
-                                         | Target (r,g,b,bright,mode,effect)
-                       +-----------------------------------+
-                               |    Unified LightState Manager     |
-                               |    (Thread-Safe Observer Bus)     |
-                               +-----------------------------------+
-                                                 ^
-        +----------------------------------------+----------------------------------------+
-        |                                        |                                        |
-+-----------------------+               +-----------------+                     +-------------------+
-| Existing Web UI /     |               |    Home         |                     |   Local Matter    |
-| esp_http_server REST  |               | Assistant MQTT  |                     |  (ESP-Matter)     |
-| & WebSockets          |               | Auto-Discovery  |                     | Extended Color    |
-| (100% PRESERVED)      |               |  (Option 1)     |                     |  (Option 2)       |
-+-----------------------+               +-----------------+                     +-------------------+
+![System Architecture Diagram](file:///C:/Users/ianfm/.gemini/antigravity/brain/93d3180c-fef0-45d1-aee3-7bd5c6dfea26/clean_architecture_diagram_1785818706104.jpg)
+
+```mermaid
+flowchart TD
+    subgraph Drivers ["Hardware Output Layer"]
+        PWM["ESP32-C3 LEDC PWM Driver\n(GPIO 5=Red, GPIO 6=Green, GPIO 7=Blue)\n5000 Hz | 12-Bit Gamma 2.8 Curve"]
+    end
+
+    subgraph StateCore ["Central State Engine"]
+        LightCore["LightCore Observer Engine\n(Thread-Safe FreeRTOS Mutex Bus & NVS Flash)"]
+    end
+
+    subgraph Providers ["Control Providers & Input Interfaces"]
+        WebUI["React 19 Web UI & WebSocket Server\n(esp_http_server + LittleFS)"]
+        MQTT["Home Assistant MQTT Provider\n(MqttProvider - Auto-Discovery)"]
+        Matter["Local Matter over Wi-Fi\n(ESP-Matter Cluster Provider)"]
+    end
+
+    WebUI <-->|"Bi-directional WS JSON\n{power, r, g, b, brightness, mode, effect}"| LightCore
+    MQTT <-->|"JSON Telemetry & Command\n{state, brightness, color, color_temp}"| LightCore
+    Matter <-->|"Matter Endpoint Clusters\n(OnOff 0x0006, Level 0x0008, Color 0x0300)"| LightCore
+
+    LightCore -->|"Target RGB & Master Brightness\n(r, g, b, brightness, deltaSec)"| PWM
 ```
 
 ---
