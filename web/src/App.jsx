@@ -70,6 +70,11 @@ export default function App() {
   const [otaStatus, setOtaStatus] = useState('');
   const wsRef = useRef(null);
   const canvasRef = useRef(null);
+  const isInteractingRef = useRef(false);
+  const seqRef = useRef(0);
+  const lastProcessedSeqRef = useRef(0);
+  const pendingUpdateRef = useRef(null);
+  const sendTimerRef = useRef(null);
 
   useEffect(() => {
     let wsUrl = `ws://${window.location.host}/ws`;
@@ -81,6 +86,7 @@ export default function App() {
 
     return () => {
       if (wsRef.current) wsRef.current.close();
+      if (sendTimerRef.current) clearTimeout(sendTimerRef.current);
     };
   }, []);
 
@@ -90,30 +96,32 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setDeviceInfo({ ip: data.ip, ssid: data.ssid, mode: data.mode });
-        setState((prev) => ({
-          ...prev,
-          power: data.power ?? prev.power,
-          r: data.r ?? prev.r,
-          g: data.g ?? prev.g,
-          b: data.b ?? prev.b,
-          brightness: data.brightness ?? prev.brightness,
-          mode: data.mode ?? prev.mode,
-          colorTemp: data.colorTemp ?? prev.colorTemp,
-          warmth: data.warmth ?? prev.warmth,
-          effect: data.effect ?? prev.effect,
-          speed: data.speed ?? prev.speed,
-          musicSensitivity: data.musicSensitivity ?? prev.musicSensitivity,
-          noiseCutoff: data.noiseCutoff ?? prev.noiseCutoff,
-          headroom: data.headroom ?? prev.headroom,
-          responseAgility: data.responseAgility ?? prev.responseAgility,
-          beatSens: data.beatSens ?? prev.beatSens,
-          beatDecay: data.beatDecay ?? prev.beatDecay,
-          pitchLowHz: data.pitchLowHz ?? prev.pitchLowHz,
-          pitchHighHz: data.pitchHighHz ?? prev.pitchHighHz,
-          pitchSmooth: data.pitchSmooth ?? prev.pitchSmooth,
-          ambientGlow: data.ambientGlow ?? prev.ambientGlow,
-          useLogScale: data.useLogScale ?? prev.useLogScale,
-        }));
+        if (!isInteractingRef.current) {
+          setState((prev) => ({
+            ...prev,
+            power: data.power ?? prev.power,
+            r: data.r ?? prev.r,
+            g: data.g ?? prev.g,
+            b: data.b ?? prev.b,
+            brightness: data.brightness ?? prev.brightness,
+            mode: data.mode ?? prev.mode,
+            colorTemp: data.colorTemp ?? prev.colorTemp,
+            warmth: data.warmth ?? prev.warmth,
+            effect: data.effect ?? prev.effect,
+            speed: data.speed ?? prev.speed,
+            musicSensitivity: data.musicSensitivity ?? prev.musicSensitivity,
+            noiseCutoff: data.noiseCutoff ?? prev.noiseCutoff,
+            headroom: data.headroom ?? prev.headroom,
+            responseAgility: data.responseAgility ?? prev.responseAgility,
+            beatSens: data.beatSens ?? prev.beatSens,
+            beatDecay: data.beatDecay ?? prev.beatDecay,
+            pitchLowHz: data.pitchLowHz ?? prev.pitchLowHz,
+            pitchHighHz: data.pitchHighHz ?? prev.pitchHighHz,
+            pitchSmooth: data.pitchSmooth ?? prev.pitchSmooth,
+            ambientGlow: data.ambientGlow ?? prev.ambientGlow,
+            useLogScale: data.useLogScale ?? prev.useLogScale,
+          }));
+        }
       }
     } catch (e) {
       console.log('API status poll offline, waiting for WebSocket');
@@ -132,7 +140,16 @@ export default function App() {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          setState((prev) => ({ ...prev, ...data }));
+          // Sequence-ID Echo Suppression: Drop delayed obsolete echoes in 0ms!
+          if (data.seq !== undefined && data.seq !== null) {
+            if (data.seq < lastProcessedSeqRef.current) {
+              return; // Discard obsolete echo
+            }
+            lastProcessedSeqRef.current = data.seq;
+          }
+          if (!isInteractingRef.current) {
+            setState((prev) => ({ ...prev, ...data }));
+          }
         } catch (err) {}
       };
       wsRef.current = ws;
@@ -141,12 +158,51 @@ export default function App() {
     }
   };
 
-  const updateState = (updates) => {
-    const newState = { ...state, ...updates };
-    setState(newState);
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(newState));
-    }
+  const updateState = (updates, isSliding = false) => {
+    const nextSeq = ++seqRef.current;
+    lastProcessedSeqRef.current = nextSeq;
+
+    setState((prev) => {
+      const newState = { ...prev, ...updates, seq: nextSeq };
+
+      if (!isSliding) {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify(newState));
+        }
+      } else {
+        pendingUpdateRef.current = newState;
+        if (!sendTimerRef.current) {
+          sendTimerRef.current = setTimeout(() => {
+            sendTimerRef.current = null;
+            if (pendingUpdateRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify(pendingUpdateRef.current));
+              pendingUpdateRef.current = null;
+            }
+          }, 35); // 35ms rate limit window
+        }
+      }
+
+      return newState;
+    });
+  };
+
+  const sliderTouchHandlers = {
+    onMouseDown: () => { isInteractingRef.current = true; },
+    onTouchStart: () => { isInteractingRef.current = true; },
+    onMouseUp: () => {
+      isInteractingRef.current = false;
+      if (pendingUpdateRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify(pendingUpdateRef.current));
+        pendingUpdateRef.current = null;
+      }
+    },
+    onTouchEnd: () => {
+      isInteractingRef.current = false;
+      if (pendingUpdateRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify(pendingUpdateRef.current));
+        pendingUpdateRef.current = null;
+      }
+    },
   };
 
   const handleOtaUpload = () => {
@@ -335,10 +391,11 @@ export default function App() {
                   min="0"
                   max="100"
                   value={state.warmth}
+                  {...sliderTouchHandlers}
                   onChange={(e) => {
                     const w = parseInt(e.target.value);
                     const k = warmthToKelvin(w);
-                    updateState({ warmth: w, colorTemp: k, mode: 'white', effect: 'static' });
+                    updateState({ warmth: w, colorTemp: k, mode: 'white', effect: 'static' }, true);
                   }}
                 />
               </div>
@@ -370,7 +427,8 @@ export default function App() {
                   min="0"
                   max="255"
                   value={state.brightness}
-                  onChange={(e) => updateState({ brightness: parseInt(e.target.value) })}
+                  {...sliderTouchHandlers}
+                  onChange={(e) => updateState({ brightness: parseInt(e.target.value) }, true)}
                 />
               </div>
             </section>
@@ -517,7 +575,8 @@ export default function App() {
                     min="1"
                     max="100"
                     value={state.musicSensitivity}
-                    onChange={(e) => updateState({ musicSensitivity: parseInt(e.target.value) })}
+                    {...sliderTouchHandlers}
+                    onChange={(e) => updateState({ musicSensitivity: parseInt(e.target.value) }, true)}
                   />
                   <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                     Adjusts INMP441 MEMS microphone gain multiplier to match room sound pressure level.
@@ -534,7 +593,8 @@ export default function App() {
                     min="0"
                     max="25"
                     value={state.noiseCutoff}
-                    onChange={(e) => updateState({ noiseCutoff: parseInt(e.target.value) })}
+                    {...sliderTouchHandlers}
+                    onChange={(e) => updateState({ noiseCutoff: parseInt(e.target.value) }, true)}
                   />
                   <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                     Cuts off low ambient room noise floor cleanly to eliminate dim-flickering during quiet pauses.
@@ -553,7 +613,8 @@ export default function App() {
                     min="1"
                     max="100"
                     value={state.responseAgility}
-                    onChange={(e) => updateState({ responseAgility: parseInt(e.target.value) })}
+                    {...sliderTouchHandlers}
+                    onChange={(e) => updateState({ responseAgility: parseInt(e.target.value) }, true)}
                   />
                   <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                     Rate limits PWM change speed (1% = ultra smooth, 100% = instant responsive).
@@ -598,7 +659,8 @@ export default function App() {
                     min="100"
                     max="250"
                     value={state.headroom}
-                    onChange={(e) => updateState({ headroom: parseInt(e.target.value) })}
+                    {...sliderTouchHandlers}
+                    onChange={(e) => updateState({ headroom: parseInt(e.target.value) }, true)}
                   />
                   <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                     Prevents moderate volume hits from clipping/saturating to 100% maximum brightness.
@@ -625,7 +687,8 @@ export default function App() {
                       min="10"
                       max="90"
                       value={state.beatSens}
-                      onChange={(e) => updateState({ beatSens: parseInt(e.target.value) })}
+                      {...sliderTouchHandlers}
+                      onChange={(e) => updateState({ beatSens: parseInt(e.target.value) }, true)}
                     />
                     <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                       Peak-over-average multiplier for bass drum beat detection triggers.
@@ -642,7 +705,8 @@ export default function App() {
                       min="20"
                       max="500"
                       value={state.beatDecay}
-                      onChange={(e) => updateState({ beatDecay: parseInt(e.target.value) })}
+                      {...sliderTouchHandlers}
+                      onChange={(e) => updateState({ beatDecay: parseInt(e.target.value) }, true)}
                     />
                     <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                       Fast drop-off vs slow fading tail after a detected beat hit.
@@ -670,7 +734,8 @@ export default function App() {
                       min="100"
                       max="250"
                       value={state.headroom}
-                      onChange={(e) => updateState({ headroom: parseInt(e.target.value) })}
+                      {...sliderTouchHandlers}
+                      onChange={(e) => updateState({ headroom: parseInt(e.target.value) }, true)}
                     />
                     <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                       Higher headroom keeps moderate volume in the middle dynamic range (prevents early maxing out).
@@ -687,7 +752,8 @@ export default function App() {
                       min="0"
                       max="30"
                       value={state.ambientGlow}
-                      onChange={(e) => updateState({ ambientGlow: parseInt(e.target.value) })}
+                      {...sliderTouchHandlers}
+                      onChange={(e) => updateState({ ambientGlow: parseInt(e.target.value) }, true)}
                     />
                     <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                       Minimum background light level maintained during silence (0% = pure blackout).
@@ -715,7 +781,8 @@ export default function App() {
                       min="80"
                       max="500"
                       value={state.pitchLowHz}
-                      onChange={(e) => updateState({ pitchLowHz: parseInt(e.target.value) })}
+                      {...sliderTouchHandlers}
+                      onChange={(e) => updateState({ pitchLowHz: parseInt(e.target.value) }, true)}
                     />
                     <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                       Frequency floor mapped to Red (humming/bass range).
@@ -732,7 +799,8 @@ export default function App() {
                       min="1000"
                       max="3500"
                       value={state.pitchHighHz}
-                      onChange={(e) => updateState({ pitchHighHz: parseInt(e.target.value) })}
+                      {...sliderTouchHandlers}
+                      onChange={(e) => updateState({ pitchHighHz: parseInt(e.target.value) }, true)}
                     />
                     <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                       Upper frequency bound mapped to Blue/Purple (whistling range).
@@ -750,7 +818,8 @@ export default function App() {
                     min="1"
                     max="30"
                     value={state.pitchSmooth}
-                    onChange={(e) => updateState({ pitchSmooth: parseInt(e.target.value) })}
+                    {...sliderTouchHandlers}
+                    onChange={(e) => updateState({ pitchSmooth: parseInt(e.target.value) }, true)}
                   />
                   <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                     Controls color glide rate when whistle pitch changes (prevents pitch chatter).
@@ -776,7 +845,8 @@ export default function App() {
                     min="0"
                     max="30"
                     value={state.ambientGlow}
-                    onChange={(e) => updateState({ ambientGlow: parseInt(e.target.value) })}
+                    {...sliderTouchHandlers}
+                    onChange={(e) => updateState({ ambientGlow: parseInt(e.target.value) }, true)}
                   />
                   <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
                     Maintains cozy background glow even during total silence.

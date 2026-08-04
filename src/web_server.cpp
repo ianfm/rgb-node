@@ -45,6 +45,7 @@ static String serializeStateJson(const LightState &st) {
   doc["pitchSmooth"] = st.pitchSmooth;
   doc["ambientGlow"] = st.ambientGlow;
   doc["useLogScale"] = st.useLogScale;
+  doc["seq"] = st.seq;
   String out;
   serializeJson(doc, out);
   return out;
@@ -79,6 +80,7 @@ static void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
         if (!doc["pitchSmooth"].isNull()) g_state.pitchSmooth = doc["pitchSmooth"].as<uint8_t>();
         if (!doc["ambientGlow"].isNull()) g_state.ambientGlow = doc["ambientGlow"].as<uint8_t>();
         if (!doc["useLogScale"].isNull()) g_state.useLogScale = doc["useLogScale"].as<bool>();
+        if (!doc["seq"].isNull()) g_state.seq = doc["seq"].as<uint32_t>();
 
         if (g_stateCallback) {
           g_stateCallback(g_state);

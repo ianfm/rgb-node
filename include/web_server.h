@@ -28,6 +28,7 @@ struct LightState {
   uint8_t pitchSmooth = 8;        // 1..50 Pitch Glide Smoothness
   uint8_t ambientGlow = 0;        // 0..30 (%) Minimum Background Glow
   bool useLogScale = true;        // Logarithmic dB vs Linear Volume Scaling
+  uint32_t seq = 0;               // Sequence ID for echo suppression
 };
 
 using StateCallback = std::function<void(const LightState &state)>;
