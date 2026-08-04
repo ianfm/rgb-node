@@ -27,6 +27,11 @@ constexpr uint8_t kPinBlue = 7;
 // UART0 TX).
 constexpr uint8_t kPinBrightness = 1;
 
+// INMP441 I2S Microphone Pin Definitions
+constexpr uint8_t kPinI2sBclk = 2; // Bit Clock / SCK
+constexpr uint8_t kPinI2sWs   = 3; // Word Select / LCK / WS
+constexpr uint8_t kPinI2sDin  = 4; // Data Out from Mic (SD) -> ESP32 Data In
+
 constexpr uint32_t kPwmFreqHz = 5000;
 constexpr uint8_t kPwmResolutionBits = 12;  // duty range 0–4095 (12-bit)
 constexpr uint16_t kPwmMaxDuty = (1 << kPwmResolutionBits) - 1;  // 4095
@@ -79,5 +84,8 @@ constexpr char kApPass[] = "12345678";
 
 constexpr uint16_t kHttpPort = 80;
 constexpr uint32_t kAudioSampleRate = 16000;
+
+constexpr char kMqttHost[] = "192.168.86.188";
+constexpr uint16_t kMqttPort = 1883;
 
 }  // namespace config

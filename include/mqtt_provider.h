@@ -2,12 +2,14 @@
 
 #include "light_core.h"
 #include <string>
+#include <WiFi.h>
+#include <MQTT.h>
 
 namespace mqtt_provider {
 
 struct MqttConfig {
   bool enabled = true;
-  std::string host = "";       // e.g. "192.168.1.100" or "homeassistant.local"
+  std::string host = "192.168.86.188";
   uint16_t port = 1883;
   std::string username = "";
   std::string password = "";
@@ -24,15 +26,19 @@ class MqttProvider : public light_core::ControlProvider {
   void onStateChanged(const light_core::LightState &state) override;
 
   void setConfig(const MqttConfig &cfg);
-  bool isConnected() const;
+  bool isConnected();
 
  private:
   light_core::LightCore *m_core;
   MqttConfig m_config;
-  bool m_connected = false;
+  WiFiClient m_wifiClient;
+  MQTTClient m_mqttClient;
+  uint32_t m_lastReconnectAttempt = 0;
+  bool m_discoveryPublished = false;
 
   void publishDiscoveryPayload();
   void publishState(const light_core::LightState &state);
+  void handleMessage(String &topic, String &payload);
 };
 
 }  // namespace mqtt_provider

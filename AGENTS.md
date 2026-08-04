@@ -10,6 +10,7 @@
   - *GPIO 0–4 are reserved for ADC1 inputs.*
 - **PWM Settings:** `5000 Hz` frequency, `12-bit` resolution (`kPwmResolutionBits = 12`, range 0–4095).
 - **Control Input:** Web/API controlled. Hardware potentiometer disabled (`RGBNODE_BRIGHTNESS_POT = 0`).
+- **Agent Execution Rule:** For read-only/informational questions (e.g. pinouts, explanations), inspect codebase/history passively without running build, upload, or branch-modifying commands.
 
 ## 2. Firmware Specifications
 - **State Persistence:** ESP32 `Preferences` (NVS) stores `power`, `r`, `g`, `b`, `brightness`, `effect`, `speed` across reboots.
