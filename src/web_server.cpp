@@ -51,13 +51,16 @@ static String serializeStateJson(const LightState &st) {
   return out;
 }
 
-static void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
+static void handleWebSocketMessage(AsyncWebSocketClient *client, void *arg, uint8_t *data, size_t len) {
   AwsFrameInfo *info = (AwsFrameInfo *)arg;
-  if (info->final && info->index == 0 && info->len == len) {
-    data[len] = 0;
-    if (data[0] == '{') {
+  if (info->final && info->index == 0) {
+    char buf[1024];
+    size_t copyLen = (len < sizeof(buf) - 1) ? len : (sizeof(buf) - 1);
+    memcpy(buf, data, copyLen);
+    buf[copyLen] = '\0';
+    if (buf[0] == '{') {
       JsonDocument doc;
-      DeserializationError err = deserializeJson(doc, (char *)data);
+      DeserializationError err = deserializeJson(doc, buf);
       if (!err) {
         if (!doc["power"].isNull()) g_state.power = doc["power"].as<bool>();
         if (!doc["r"].isNull()) g_state.r = doc["r"].as<uint8_t>();
@@ -65,6 +68,7 @@ static void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
         if (!doc["b"].isNull()) g_state.b = doc["b"].as<uint8_t>();
         if (!doc["brightness"].isNull()) g_state.brightness = doc["brightness"].as<uint8_t>();
         if (!doc["mode"].isNull()) g_state.mode = doc["mode"].as<String>();
+        if (!doc["lightMode"].isNull()) g_state.mode = doc["lightMode"].as<String>();
         if (!doc["colorTemp"].isNull()) g_state.colorTemp = doc["colorTemp"].as<uint16_t>();
         if (!doc["warmth"].isNull()) g_state.warmth = doc["warmth"].as<uint8_t>();
         if (!doc["effect"].isNull()) g_state.effect = doc["effect"].as<String>();
@@ -97,13 +101,14 @@ static void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
     case WS_EVT_CONNECT:
       Serial.printf("WebSocket client #%u connected from %s\n", client->id(),
                     client->remoteIP().toString().c_str());
+      client->setCloseClientOnQueueFull(false);
       client->text(serializeStateJson(g_state));
       break;
     case WS_EVT_DISCONNECT:
       Serial.printf("WebSocket client #%u disconnected\n", client->id());
       break;
     case WS_EVT_DATA:
-      handleWebSocketMessage(arg, data, len);
+      handleWebSocketMessage(client, arg, data, len);
       break;
     case WS_EVT_PONG:
     case WS_EVT_ERROR:
@@ -213,32 +218,50 @@ void init(StateCallback onStateChange, const LightState &initialState) {
   });
 
   // POST /api/state
-  AsyncCallbackJsonWebHandler *handler = new AsyncCallbackJsonWebHandler(
-      "/api/state", [](AsyncWebServerRequest *request, JsonVariant &json) {
-        JsonObject doc = json.as<JsonObject>();
-        if (!doc.isNull()) {
-          if (!doc["power"].isNull()) g_state.power = doc["power"].as<bool>();
-          if (!doc["r"].isNull()) g_state.r = doc["r"].as<uint8_t>();
-          if (!doc["g"].isNull()) g_state.g = doc["g"].as<uint8_t>();
-          if (!doc["b"].isNull()) g_state.b = doc["b"].as<uint8_t>();
-          if (!doc["brightness"].isNull()) g_state.brightness = doc["brightness"].as<uint8_t>();
-          if (!doc["lightMode"].isNull()) g_state.mode = doc["lightMode"].as<String>();
-          if (!doc["colorTemp"].isNull()) g_state.colorTemp = doc["colorTemp"].as<uint16_t>();
-          if (!doc["warmth"].isNull()) g_state.warmth = doc["warmth"].as<uint8_t>();
-          if (!doc["effect"].isNull()) g_state.effect = doc["effect"].as<String>();
-          if (!doc["speed"].isNull()) g_state.speed = doc["speed"].as<uint8_t>();
-          if (!doc["musicSensitivity"].isNull()) g_state.musicSensitivity = doc["musicSensitivity"].as<uint8_t>();
+  server.on(
+      "/api/state", HTTP_POST,
+      [](AsyncWebServerRequest *request) {
+        if (request->_tempObject) {
+          String *body = (String *)request->_tempObject;
+          JsonDocument doc;
+          DeserializationError err = deserializeJson(doc, *body);
+          delete body;
+          request->_tempObject = nullptr;
 
-          if (g_stateCallback) {
-            g_stateCallback(g_state);
+          if (!err) {
+            if (!doc["power"].isNull()) g_state.power = doc["power"].as<bool>();
+            if (!doc["r"].isNull()) g_state.r = doc["r"].as<uint8_t>();
+            if (!doc["g"].isNull()) g_state.g = doc["g"].as<uint8_t>();
+            if (!doc["b"].isNull()) g_state.b = doc["b"].as<uint8_t>();
+            if (!doc["brightness"].isNull()) g_state.brightness = doc["brightness"].as<uint8_t>();
+            if (!doc["mode"].isNull()) g_state.mode = doc["mode"].as<String>();
+            if (!doc["lightMode"].isNull()) g_state.mode = doc["lightMode"].as<String>();
+            if (!doc["colorTemp"].isNull()) g_state.colorTemp = doc["colorTemp"].as<uint16_t>();
+            if (!doc["warmth"].isNull()) g_state.warmth = doc["warmth"].as<uint8_t>();
+            if (!doc["effect"].isNull()) g_state.effect = doc["effect"].as<String>();
+            if (!doc["speed"].isNull()) g_state.speed = doc["speed"].as<uint8_t>();
+            if (!doc["musicSensitivity"].isNull()) g_state.musicSensitivity = doc["musicSensitivity"].as<uint8_t>();
+
+            if (g_stateCallback) {
+              g_stateCallback(g_state);
+            }
+            broadcastState(g_state);
+            request->send(200, "application/json", "{\"status\":\"ok\"}");
+            return;
           }
-          broadcastState(g_state);
-          request->send(200, "application/json", "{\"status\":\"ok\"}");
-        } else {
-          request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+        }
+        request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+      },
+      nullptr,
+      [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (index == 0) {
+          request->_tempObject = new String();
+        }
+        if (request->_tempObject) {
+          String *body = (String *)request->_tempObject;
+          body->concat((char *)data, len);
         }
       });
-  server.addHandler(handler);
 
   // POST /update Web UI Drag-and-Drop OTA Upload
   server.on(
@@ -246,7 +269,8 @@ void init(StateCallback onStateChange, const LightState &initialState) {
       [](AsyncWebServerRequest *request) {
         bool shouldReboot = !Update.hasError();
         AsyncWebServerResponse *response = request->beginResponse(
-            200, "text/plain", shouldReboot ? "OK" : "FAIL");
+            200, "text/plain",
+            shouldReboot ? "OK" : "FAIL");
         response->addHeader("Connection", "close");
         request->send(response);
         if (shouldReboot) {
@@ -256,24 +280,18 @@ void init(StateCallback onStateChange, const LightState &initialState) {
       },
       [](AsyncWebServerRequest *request, String filename, size_t index,
          uint8_t *data, size_t len, bool final) {
-        if (!index) {
-          Serial.printf("HTTP OTA Update Start: %s\n", filename.c_str());
-          int command = U_FLASH;
-          if (filename.indexOf("littlefs") >= 0 || filename.indexOf("spiffs") >= 0) {
-            command = U_SPIFFS;
-          }
-          if (!Update.begin(UPDATE_SIZE_UNKNOWN, command)) {
+        if (index == 0) {
+          Serial.printf("Update Start: %s\n", filename.c_str());
+          if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
             Update.printError(Serial);
           }
         }
-        if (!Update.hasError()) {
-          if (Update.write(data, len) != len) {
-            Update.printError(Serial);
-          }
+        if (Update.write(data, len) != len) {
+          Update.printError(Serial);
         }
         if (final) {
           if (Update.end(true)) {
-            Serial.printf("HTTP OTA Update Success: %u B\n", index + len);
+            Serial.printf("Update Success: %u bytes\n", index + len);
           } else {
             Update.printError(Serial);
           }
@@ -300,14 +318,22 @@ void init(StateCallback onStateChange, const LightState &initialState) {
 void loop() {
   ws.cleanupClients();
   ArduinoOTA.handle();
-  if (g_usingStaMode) {
-    wifiMulti.run();
+
+  static uint32_t lastWifiCheckMs = 0;
+  const uint32_t now = millis();
+  if (g_usingStaMode && WiFi.status() != WL_CONNECTED) {
+    if (now - lastWifiCheckMs >= 5000) {
+      lastWifiCheckMs = now;
+      wifiMulti.run();
+    }
   }
 }
 
 void broadcastState(const LightState &state) {
   g_state = state;
-  ws.textAll(serializeStateJson(g_state));
+  if (ws.count() > 0 && ws.availableForWriteAll()) {
+    ws.textAll(serializeStateJson(g_state));
+  }
 }
 
 }  // namespace web_server

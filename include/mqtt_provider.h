@@ -27,6 +27,7 @@ class MqttProvider : public light_core::ControlProvider {
 
   void setConfig(const MqttConfig &cfg);
   bool isConnected();
+  void processLoop();
 
  private:
   light_core::LightCore *m_core;
@@ -35,6 +36,7 @@ class MqttProvider : public light_core::ControlProvider {
   MQTTClient m_mqttClient;
   uint32_t m_lastReconnectAttempt = 0;
   bool m_discoveryPublished = false;
+  SemaphoreHandle_t m_mutex = nullptr;
 
   void publishDiscoveryPayload();
   void publishState(const light_core::LightState &state);

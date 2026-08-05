@@ -5,39 +5,60 @@
 
 namespace mqtt_provider {
 
+static void mqttTaskFunc(void *param) {
+  MqttProvider *provider = static_cast<MqttProvider *>(param);
+  while (true) {
+    provider->processLoop();
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+}
+
 MqttProvider::MqttProvider(light_core::LightCore *core, const MqttConfig &cfg)
-    : m_core(core), m_config(cfg), m_mqttClient(1024) {}
+    : m_core(core), m_config(cfg), m_mqttClient(1024) {
+  m_mutex = xSemaphoreCreateMutex();
+}
 
 void MqttProvider::init() {
   if (m_core) {
     m_core->registerProvider(this);
   }
 
+  m_wifiClient.setTimeout(150);
+  m_mqttClient.setTimeout(150);
   m_mqttClient.begin(m_config.host.c_str(), m_config.port, m_wifiClient);
   m_mqttClient.onMessage([this](String &topic, String &payload) {
     this->handleMessage(topic, payload);
   });
+
+  xTaskCreate(mqttTaskFunc, "mqtt_task", 4096, this, 1, nullptr);
 }
 
 void MqttProvider::loop() {
+  // Main looper remains 100% non-blocking! MQTT processing runs in background task.
+}
+
+void MqttProvider::processLoop() {
   if (WiFi.status() != WL_CONNECTED) return;
 
-  m_mqttClient.loop();
+  if (m_mutex && xSemaphoreTake(m_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    m_mqttClient.loop();
 
-  if (!m_mqttClient.connected()) {
-    uint32_t now = millis();
-    if (now - m_lastReconnectAttempt > 5000) {
-      m_lastReconnectAttempt = now;
-      Serial.println("[MQTT] Connecting to MQTT broker...");
-      if (m_mqttClient.connect("rgb-node-esp32c3", m_config.username.c_str(), m_config.password.c_str())) {
-        Serial.println("[MQTT] Connected successfully to broker!");
-        publishDiscoveryPayload();
-        m_mqttClient.subscribe("rgb-node/light/switch");
-        if (m_core) {
-          publishState(m_core->getState());
+    if (!m_mqttClient.connected()) {
+      uint32_t now = millis();
+      if (now - m_lastReconnectAttempt > 15000) {
+        m_lastReconnectAttempt = now;
+        Serial.println("[MQTT] Connecting to MQTT broker in background...");
+        if (m_mqttClient.connect("rgb-node-esp32c3", m_config.username.c_str(), m_config.password.c_str())) {
+          Serial.println("[MQTT] Connected successfully to broker!");
+          publishDiscoveryPayload();
+          m_mqttClient.subscribe("rgb-node/light/switch");
+          if (m_core) {
+            publishState(m_core->getState());
+          }
         }
       }
     }
+    xSemaphoreGive(m_mutex);
   }
 }
 
@@ -90,29 +111,32 @@ void MqttProvider::publishDiscoveryPayload() {
 }
 
 void MqttProvider::publishState(const light_core::LightState &state) {
-  if (!m_mqttClient.connected()) return;
+  if (m_mutex && xSemaphoreTake(m_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    if (m_mqttClient.connected()) {
+      JsonDocument doc;
+      doc["state"] = state.power ? "ON" : "OFF";
+      doc["brightness"] = state.brightness;
 
-  JsonDocument doc;
-  doc["state"] = state.power ? "ON" : "OFF";
-  doc["brightness"] = state.brightness;
+      if (state.mode == "white") {
+        doc["color_mode"] = "color_temp";
+        uint32_t mireds = 1000000 / (state.colorTemp > 0 ? state.colorTemp : 2700);
+        doc["color_temp"] = mireds;
+      } else {
+        doc["color_mode"] = "rgb";
+        JsonObject rgb = doc["color"].to<JsonObject>();
+        rgb["r"] = state.r;
+        rgb["g"] = state.g;
+        rgb["b"] = state.b;
+      }
 
-  if (state.mode == "white") {
-    doc["color_mode"] = "color_temp";
-    uint32_t mireds = 1000000 / (state.colorTemp > 0 ? state.colorTemp : 2700);
-    doc["color_temp"] = mireds;
-  } else {
-    doc["color_mode"] = "rgb";
-    JsonObject rgb = doc["color"].to<JsonObject>();
-    rgb["r"] = state.r;
-    rgb["g"] = state.g;
-    rgb["b"] = state.b;
+      doc["effect"] = state.effect.c_str();
+
+      String out;
+      serializeJson(doc, out);
+      m_mqttClient.publish("rgb-node/light/status", out, false, 0);
+    }
+    xSemaphoreGive(m_mutex);
   }
-
-  doc["effect"] = state.effect.c_str();
-
-  String out;
-  serializeJson(doc, out);
-  m_mqttClient.publish("rgb-node/light/status", out, false, 0);
 }
 
 void MqttProvider::handleMessage(String &topic, String &payload) {

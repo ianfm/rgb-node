@@ -201,7 +201,7 @@ void init(uint8_t pinBclk, uint8_t pinWs, uint8_t pinDin) {
 
   Serial.println("I2S INMP441 Microphone initialized successfully!");
 
-  xTaskCreate(audioTask, "audio_dsp_task", 4096, nullptr, 3, nullptr);
+  xTaskCreate(audioTask, "audio_dsp_task", 4096, nullptr, 1, nullptr);
 }
 
 }  // namespace audio_dsp

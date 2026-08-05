@@ -22,31 +22,44 @@ static float g_currentR = 0.0f;
 static float g_currentG = 0.0f;
 static float g_currentB = 0.0f;
 
-// Save current state to NVS memory
+static bool g_nvsDirty = false;
+static uint32_t g_lastStateChangeMs = 0;
+static web_server::LightState g_lastSavedState;
+static bool g_hasSavedState = false;
+
+static void markStateDirty() {
+  g_nvsDirty = true;
+  g_lastStateChangeMs = millis();
+}
+
+// Save current state to NVS memory (delta/diff only to preserve flash & avoid stalls)
 static void saveStateToNvs() {
   preferences.begin("rgb_state", false);
-  preferences.putBool("power", g_state.power);
-  preferences.putUChar("r", g_state.r);
-  preferences.putUChar("g", g_state.g);
-  preferences.putUChar("b", g_state.b);
-  preferences.putUChar("brightness", g_state.brightness);
-  preferences.putString("mode", g_state.mode);
-  preferences.putUShort("colorTemp", g_state.colorTemp);
-  preferences.putUChar("warmth", g_state.warmth);
-  preferences.putString("effect", g_state.effect);
-  preferences.putUChar("speed", g_state.speed);
-  preferences.putUChar("musicSens", g_state.musicSensitivity);
-  preferences.putUChar("noiseCut", g_state.noiseCutoff);
-  preferences.putUChar("headroom", g_state.headroom);
-  preferences.putUChar("agility", g_state.responseAgility);
-  preferences.putUChar("beatSens", g_state.beatSens);
-  preferences.putUShort("beatDecay", g_state.beatDecay);
-  preferences.putUShort("pitchLow", g_state.pitchLowHz);
-  preferences.putUShort("pitchHigh", g_state.pitchHighHz);
-  preferences.putUChar("pitchSmooth", g_state.pitchSmooth);
-  preferences.putUChar("ambientGlow", g_state.ambientGlow);
-  preferences.putBool("useLogScale", g_state.useLogScale);
+  if (!g_hasSavedState || g_state.power != g_lastSavedState.power) preferences.putBool("power", g_state.power);
+  if (!g_hasSavedState || g_state.r != g_lastSavedState.r) preferences.putUChar("r", g_state.r);
+  if (!g_hasSavedState || g_state.g != g_lastSavedState.g) preferences.putUChar("g", g_state.g);
+  if (!g_hasSavedState || g_state.b != g_lastSavedState.b) preferences.putUChar("b", g_state.b);
+  if (!g_hasSavedState || g_state.brightness != g_lastSavedState.brightness) preferences.putUChar("brightness", g_state.brightness);
+  if (!g_hasSavedState || g_state.mode != g_lastSavedState.mode) preferences.putString("mode", g_state.mode);
+  if (!g_hasSavedState || g_state.colorTemp != g_lastSavedState.colorTemp) preferences.putUShort("colorTemp", g_state.colorTemp);
+  if (!g_hasSavedState || g_state.warmth != g_lastSavedState.warmth) preferences.putUChar("warmth", g_state.warmth);
+  if (!g_hasSavedState || g_state.effect != g_lastSavedState.effect) preferences.putString("effect", g_state.effect);
+  if (!g_hasSavedState || g_state.speed != g_lastSavedState.speed) preferences.putUChar("speed", g_state.speed);
+  if (!g_hasSavedState || g_state.musicSensitivity != g_lastSavedState.musicSensitivity) preferences.putUChar("musicSens", g_state.musicSensitivity);
+  if (!g_hasSavedState || g_state.noiseCutoff != g_lastSavedState.noiseCutoff) preferences.putUChar("noiseCut", g_state.noiseCutoff);
+  if (!g_hasSavedState || g_state.headroom != g_lastSavedState.headroom) preferences.putUChar("headroom", g_state.headroom);
+  if (!g_hasSavedState || g_state.responseAgility != g_lastSavedState.responseAgility) preferences.putUChar("agility", g_state.responseAgility);
+  if (!g_hasSavedState || g_state.beatSens != g_lastSavedState.beatSens) preferences.putUChar("beatSens", g_state.beatSens);
+  if (!g_hasSavedState || g_state.beatDecay != g_lastSavedState.beatDecay) preferences.putUShort("beatDecay", g_state.beatDecay);
+  if (!g_hasSavedState || g_state.pitchLowHz != g_lastSavedState.pitchLowHz) preferences.putUShort("pitchLow", g_state.pitchLowHz);
+  if (!g_hasSavedState || g_state.pitchHighHz != g_lastSavedState.pitchHighHz) preferences.putUShort("pitchHigh", g_state.pitchHighHz);
+  if (!g_hasSavedState || g_state.pitchSmooth != g_lastSavedState.pitchSmooth) preferences.putUChar("pitchSmooth", g_state.pitchSmooth);
+  if (!g_hasSavedState || g_state.ambientGlow != g_lastSavedState.ambientGlow) preferences.putUChar("ambientGlow", g_state.ambientGlow);
+  if (!g_hasSavedState || g_state.useLogScale != g_lastSavedState.useLogScale) preferences.putBool("useLogScale", g_state.useLogScale);
   preferences.end();
+
+  g_lastSavedState = g_state;
+  g_hasSavedState = true;
 }
 
 // Load state from NVS memory
@@ -74,6 +87,9 @@ static void loadStateFromNvs() {
   g_state.ambientGlow = preferences.getUChar("ambientGlow", 0);
   g_state.useLogScale = preferences.getBool("useLogScale", true);
   preferences.end();
+
+  g_lastSavedState = g_state;
+  g_hasSavedState = true;
 }
 
 void setup() {
@@ -103,7 +119,7 @@ void setup() {
   web_server::init(
       [](const web_server::LightState &newState) {
         g_state = newState;
-        saveStateToNvs();
+        markStateDirty();
       },
       g_state);
 }
@@ -112,6 +128,12 @@ void loop() {
   web_server::loop();
   if (g_mqtt) {
     g_mqtt->loop();
+  }
+
+  // Debounced NVS state persistence (saves 3s after the last state modification stops)
+  if (g_nvsDirty && (millis() - g_lastStateChangeMs >= 3000)) {
+    g_nvsDirty = false;
+    saveStateToNvs();
   }
 
   static uint32_t lastLoopTime = millis();
@@ -149,7 +171,9 @@ void loop() {
   float ambGlow = (float)g_state.ambientGlow / 100.0f;
 
   if (g_state.power) {
-    if (g_state.effect == "hue_cycle") {
+    if (g_state.mode == "white") {
+      light_core::kelvinToRgbFloat(g_state.colorTemp, targetR, targetG, targetB);
+    } else if (g_state.effect == "hue_cycle") {
       const float cycleFreqHz = 0.02f + (g_state.speed - 1) * (0.48f / 99.0f);
       animHue += deltaSec * cycleFreqHz;
       if (animHue >= 1.0f) animHue -= 1.0f;

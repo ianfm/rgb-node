@@ -158,6 +158,18 @@ export default function App() {
     }
   };
 
+  const sendPayload = (payload) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(payload));
+    } else {
+      fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => {});
+    }
+  };
+
   const updateState = (updates, isSliding = false) => {
     const nextSeq = ++seqRef.current;
     lastProcessedSeqRef.current = nextSeq;
@@ -166,16 +178,14 @@ export default function App() {
       const newState = { ...prev, ...updates, seq: nextSeq };
 
       if (!isSliding) {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify(newState));
-        }
+        sendPayload(newState);
       } else {
         pendingUpdateRef.current = newState;
         if (!sendTimerRef.current) {
           sendTimerRef.current = setTimeout(() => {
             sendTimerRef.current = null;
-            if (pendingUpdateRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify(pendingUpdateRef.current));
+            if (pendingUpdateRef.current) {
+              sendPayload(pendingUpdateRef.current);
               pendingUpdateRef.current = null;
             }
           }, 35); // 35ms rate limit window
@@ -191,15 +201,15 @@ export default function App() {
     onTouchStart: () => { isInteractingRef.current = true; },
     onMouseUp: () => {
       isInteractingRef.current = false;
-      if (pendingUpdateRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify(pendingUpdateRef.current));
+      if (pendingUpdateRef.current) {
+        sendPayload(pendingUpdateRef.current);
         pendingUpdateRef.current = null;
       }
     },
     onTouchEnd: () => {
       isInteractingRef.current = false;
-      if (pendingUpdateRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify(pendingUpdateRef.current));
+      if (pendingUpdateRef.current) {
+        sendPayload(pendingUpdateRef.current);
         pendingUpdateRef.current = null;
       }
     },
