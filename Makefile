@@ -1,4 +1,5 @@
 PIO := pio
+#DEV = --upload-port /dev/ttyACM2
 
 .DEFAULT_GOAL := help
 
@@ -29,10 +30,10 @@ build-web:
 	cd web && npm install && npm run build
 
 build:
-	$(PIO) run
+	$(PIO) run -e esp32c3-supermini -e esp32c3-supermini-ota
 
 flash:
-	$(PIO) run -t upload
+	$(PIO) run -e esp32c3-supermini -t upload
 
 ota:
 	$(PIO) run -e esp32c3-supermini-ota -t upload
