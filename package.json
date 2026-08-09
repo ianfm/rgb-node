@@ -10,9 +10,12 @@
     "build": "npm run build:web && npm run build:firmware",
     "flash": "pio run -e esp32c3-supermini -t upload",
     "upload:fs": "npm run build:web && pio run -t uploadfs",
+    "upload-fs": "npm run upload:fs",
     "ota": "pio run -e esp32c3-supermini-ota -t upload",
     "ota:fs": "npm run build:web && pio run -e esp32c3-supermini-ota -t uploadfs",
+    "ota-fs": "npm run ota:fs",
     "ota:all": "npm run ota && npm run ota:fs",
+    "ota-all": "npm run ota:all",
     "release": "npm run build && node -e \"require('fs').mkdirSync('releases/v0.01', {recursive: true})\""
   },
   "keywords": [
