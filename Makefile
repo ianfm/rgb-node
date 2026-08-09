@@ -1,11 +1,21 @@
-PIO := $(shell command -v pio 2>/dev/null || echo "$(HOME)/.local/bin/pio")
+export PYTHONIOENCODING ?= utf-8
+
+ifeq ($(OS),Windows_NT)
+    PIO ?= $(firstword $(shell where pio 2>NUL || where.exe pio 2>NUL || echo pio))
+    MKDIR_P := powershell -Command "New-Item -ItemType Directory -Force"
+    CP := powershell -Command "Copy-Item -Force"
+else
+    PIO ?= $(shell command -v pio 2>/dev/null || echo "$(HOME)/.local/bin/pio")
+    MKDIR_P := mkdir -p
+    CP := cp
+endif
 
 .DEFAULT_GOAL := help
 
 help:
 	@echo "rgb-node — ESP32-C3 Super Mini RGB LED driver"
 	@echo ""
-	@echo "  make setup      install PlatformIO with uv (one-time)"
+	@echo "  make setup      install PlatformIO (one-time)"
 	@echo "  make build-web  compile the React web application"
 	@echo "  make build      compile the firmware"
 	@echo "  make flash      build and upload firmware over USB"
@@ -19,11 +29,15 @@ help:
 	@echo "  make clean      remove build artifacts"
 
 setup:
+ifeq ($(OS),Windows_NT)
+	@where pio >NUL 2>&1 || where.exe pio >NUL 2>&1 || python -m pip install platformio
+else
 	@command -v uv >/dev/null 2>&1 || { \
 		echo "Installing uv..."; \
 		curl -LsSf https://astral.sh/uv/install.sh | sh || exit 1; \
 	}
 	@PATH="$(HOME)/.local/bin:$$PATH" uv tool install platformio
+endif
 
 build-web:
 	cd web && npm install && npm run build
@@ -48,11 +62,11 @@ upload-fs: build-web
 	$(PIO) run -t uploadfs
 
 release: build build-web
-	mkdir -p releases/v0.01
-	cp .pio/build/esp32c3-supermini/firmware.factory.bin releases/v0.01/
-	cp .pio/build/esp32c3-supermini/firmware.bin releases/v0.01/
-	cp .pio/build/esp32c3-supermini/bootloader.bin releases/v0.01/
-	cp .pio/build/esp32c3-supermini/partitions.bin releases/v0.01/
+	$(MKDIR_P) releases/v0.01
+	$(CP) .pio/build/esp32c3-supermini/firmware.factory.bin releases/v0.01/
+	$(CP) .pio/build/esp32c3-supermini/firmware.bin releases/v0.01/
+	$(CP) .pio/build/esp32c3-supermini/bootloader.bin releases/v0.01/
+	$(CP) .pio/build/esp32c3-supermini/partitions.bin releases/v0.01/
 	@echo "Release binaries saved to releases/v0.01/"
 
 monitor:
