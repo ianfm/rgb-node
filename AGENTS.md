@@ -47,6 +47,7 @@
 - `npm run build:web` — Compile React web app (`npm --prefix web run build`).
 - `npm run build:firmware` — Compile C++ firmware (`pio run -e esp32c3-supermini -e esp32c3-supermini-ota`).
 - `npm run flash` — Upload firmware over USB (`pio run -e esp32c3-supermini -t upload`).
+- `npm run flash:all` / `npm run flash-all` — Upload both C++ firmware and LittleFS web assets over USB (`npm run flash && npm run upload:fs`).
 - `npm run upload:fs` / `npm run upload-fs` — Upload LittleFS static web assets over USB (`pio run -t uploadfs`).
 - `npm run ota` — Upload firmware wirelessly over Wi-Fi (`pio run -e esp32c3-supermini-ota -t upload`).
 - `npm run ota:fs` / `npm run ota-fs` — Upload LittleFS static web assets over Wi-Fi (`pio run -e esp32c3-supermini-ota -t uploadfs`).
@@ -56,6 +57,7 @@
 - `make build-web` — Alias for `npm --prefix web run build`.
 - `make build` — Alias for `pio run -e esp32c3-supermini -e esp32c3-supermini-ota`.
 - `make flash` — Alias for USB flash upload.
+- `make flash-all` — Upload both C++ firmware and LittleFS static web assets over USB.
 - `make upload-fs` — Upload LittleFS static web assets over USB.
 - `make ota` — Upload C++ firmware wirelessly over Wi-Fi.
 - `make ota-fs` — Upload LittleFS static web assets wirelessly over Wi-Fi.

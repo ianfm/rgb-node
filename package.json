@@ -9,6 +9,8 @@
     "build:firmware": "pio run -e esp32c3-supermini -e esp32c3-supermini-ota",
     "build": "npm run build:web && npm run build:firmware",
     "flash": "pio run -e esp32c3-supermini -t upload",
+    "flash:all": "npm run flash && npm run upload:fs",
+    "flash-all": "npm run flash:all",
     "upload:fs": "npm run build:web && pio run -t uploadfs",
     "upload-fs": "npm run upload:fs",
     "ota": "pio run -e esp32c3-supermini-ota -t upload",

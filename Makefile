@@ -49,6 +49,9 @@ ota-all: ota ota-fs
 upload-fs: build-web
 	$(PIO) run -t uploadfs
 
+flash-all: flash upload-fs
+
+
 release: build build-web
 	mkdir -p releases/v0.01
 	cp .pio/build/esp32c3-supermini/firmware.factory.bin releases/v0.01/
@@ -63,4 +66,4 @@ monitor:
 clean:
 	$(PIO) run -t clean
 
-.PHONY: help setup build-web build flash ota flash-ota ota-fs ota-all upload-fs release monitor clean
+.PHONY: help setup build-web build flash flash-all ota flash-ota ota-fs ota-all upload-fs release monitor clean
