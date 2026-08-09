@@ -22,22 +22,43 @@
 
 ## Prerequisites
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) — used to install PlatformIO; PlatformIO then fetches the pinned toolchain and framework automatically on first build.
-- `make` and `git`.
+- [Node.js (v18+)](https://nodejs.org/) & `npm`
+- [Python (3.9+)](https://www.python.org/) or [uv](https://docs.astral.sh/uv/getting-started/installation/) — used to install PlatformIO (`uv tool install platformio` or `pip install platformio`).
+- Optional: `make` (for Linux/macOS POSIX workflow).
 
 ## Quickstart
+
+### Cross-Platform / Windows (npm)
 
 ```sh
 git clone <repo-url> rgb-node
 cd rgb-node
+npm run build      # compiles React web app and C++ firmware
+npm run ota        # uploads firmware wirelessly over Wi-Fi
+```
+
+### Windows Helper Scripts
+
+```cmd
+:: Windows CMD
+build.cmd
+
+# Windows PowerShell
+$env:PYTHONIOENCODING="utf-8"
+.\build.ps1
+```
+
+### Linux / macOS (make)
+
+```sh
 make setup     # one-time: installs PlatformIO via uv
-make build     # builds C++ firmware
+make build     # builds React web app & C++ firmware
 make ota       # uploads firmware wirelessly over Wi-Fi
 ```
 
 The first build downloads the ESP32 toolchain (a few hundred MB); later builds are fast.
 
-## Features & Features Overview
+## Features Overview
 
 1. **Natural CCT Lighting**: Kelvin scale (2000K to 6500K) with Warmth percentage sliders.
 2. **Decorative RGB**: Continuous HSL color wheel, quick swatches, Rainbow Cycle, Breathe, Candle Flicker, and Strobe.
@@ -50,20 +71,25 @@ The first build downloads the ESP32 toolchain (a few hundred MB); later builds a
 4. **Home Assistant MQTT Auto-Discovery**: Zero-touch integration via MQTT broadcast.
 5. **OTA Wireless Updates**: Web drag-and-drop or CLI upload.
 
-## Make Targets
+## Build Commands
 
-| Target | Does |
-|---|---|
-| `make setup` | Install PlatformIO with `uv tool install platformio` |
-| `make build-web` | Compile React web application (`web/dist`) |
-| `make build` | Compile C++ firmware |
-| `make flash` | Build + upload over USB serial |
-| `make ota` | Build + upload wirelessly over Wi-Fi (`esp32c3-supermini-ota`) |
-| `make upload-fs` | Upload LittleFS web filesystem image over USB serial |
-| `make monitor` | Open the serial monitor at 115200 baud |
-| `make clean` | Remove build artifacts |
+| npm Script | Make Target | Action |
+|---|---|---|
+| `npm run build` | `make build` | Compile React web app + C++ firmware |
+| `npm run build:web` | `make build-web` | Compile React web application (`web/dist`) |
+| `npm run build:firmware` | — | Compile C++ firmware (`pio run`) |
+| `npm run flash` | `make flash` | Build + upload over USB serial |
+| `npm run ota` | `make ota` | Build + upload wirelessly over Wi-Fi (`esp32c3-supermini-ota`) |
+| `npm run upload:fs` | `make upload-fs` | Upload LittleFS web filesystem image over USB serial |
+| — | `make monitor` | Open the serial monitor at 115200 baud |
+| — | `make clean` | Remove build artifacts |
 
 ## Troubleshooting
 
-- **Windows CLI Note:** Set `PYTHONIOENCODING=utf-8` on Windows for `pio` uploads (`cmd /c "set PYTHONIOENCODING=utf-8 && pio run -t upload"`).
+- **Windows Encoding Errors (`UnicodeDecodeError`):** PlatformIO on Windows requires UTF-8 output encoding. Ensure `PYTHONIOENCODING=utf-8` is set:
+  - PowerShell: `$env:PYTHONIOENCODING="utf-8"`
+  - CMD: `set PYTHONIOENCODING=utf-8`
+- **`'make' is not recognized` on Windows:** Use `npm run build` or `build.cmd` instead of `make`.
+- **`'pio' is not recognized`:** Add PlatformIO to PATH (`%USERPROFILE%\.local\bin` or `%USERPROFILE%\.platformio\penv\Scripts`), or install via `uv tool install platformio`.
 - **No serial output:** The Super Mini uses the C3's native USB; `platformio.ini` already sets `ARDUINO_USB_CDC_ON_BOOT=1` to route `Serial` there — make sure you didn't remove it.
+

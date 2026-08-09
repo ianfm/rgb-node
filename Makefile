@@ -29,8 +29,9 @@ setup:
 build-web:
 	cd web && npm install && npm run build
 
-build:
+build: build-web
 	$(PIO) run -e esp32c3-supermini -e esp32c3-supermini-ota
+
 
 flash:
 	$(PIO) run -e esp32c3-supermini -t upload

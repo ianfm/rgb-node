@@ -1,0 +1,28 @@
+{
+  "name": "rgb-node",
+  "version": "0.0.1",
+  "description": "ESP32-C3 Super Mini 3-Channel RGB LED Driver with Web UI & Audio DSP",
+  "private": true,
+  "scripts": {
+    "setup": "uv tool install platformio",
+    "build:web": "npm --prefix web run build",
+    "build:firmware": "pio run -e esp32c3-supermini -e esp32c3-supermini-ota",
+    "build": "npm run build:web && npm run build:firmware",
+    "flash": "pio run -e esp32c3-supermini -t upload",
+    "upload:fs": "npm run build:web && pio run -t uploadfs",
+    "ota": "pio run -e esp32c3-supermini-ota -t upload",
+    "ota:fs": "npm run build:web && pio run -e esp32c3-supermini-ota -t uploadfs",
+    "ota:all": "npm run ota && npm run ota:fs",
+    "release": "npm run build && node -e \"require('fs').mkdirSync('releases/v0.01', {recursive: true})\""
+  },
+  "keywords": [
+    "esp32-c3",
+    "led-driver",
+    "firmware",
+    "react",
+    "vite",
+    "platformio"
+  ],
+  "author": "Ian McMurray",
+  "license": "MIT"
+}

@@ -41,9 +41,27 @@
 - **UI Constraints:** No drop-shadow glows, no neon accents, no gradients. Clean sans-serif (`Inter`) with monospace readouts (`JetBrains Mono`) for `#HEX`, `RGB()`, and `HSV()` numerical data.
 
 ## 4. Commands & Verification
-- `make build-web` — Compile React app (`npm --prefix web run build`).
-- `make build` — Compile C++ firmware (`pio run`).
-- `make flash` — Upload firmware over USB (`pio run -e esp32c3-supermini -t upload`).
-- `make upload-fs` — Upload LittleFS image over USB (`pio run -t uploadfs`).
-- `make ota` — Upload firmware wirelessly over Wi-Fi (`pio run -e esp32c3-supermini-ota -t upload`).
-- **Windows CLI Note:** Set `PYTHONIOENCODING=utf-8` on Windows for `pio` uploads (`cmd /c "set PYTHONIOENCODING=utf-8 && pio run -t upload"`).
+
+### Cross-Platform & Windows Native Commands (Primary)
+- `npm run build` — Compile both React Web UI and C++ firmware (`npm --prefix web run build` + `pio run`).
+- `npm run build:web` — Compile React web app (`npm --prefix web run build`).
+- `npm run build:firmware` — Compile C++ firmware (`pio run -e esp32c3-supermini -e esp32c3-supermini-ota`).
+- `npm run flash` — Upload firmware over USB (`pio run -e esp32c3-supermini -t upload`).
+- `npm run upload:fs` — Upload LittleFS static web assets over USB (`pio run -t uploadfs`).
+- `npm run ota` — Upload firmware wirelessly over Wi-Fi (`pio run -e esp32c3-supermini-ota -t upload`).
+- `npm run ota:fs` — Upload LittleFS static web assets over Wi-Fi (`pio run -e esp32c3-supermini-ota -t uploadfs`).
+
+### GNU Make Commands (Optional / POSIX)
+- `make build-web` — Alias for `npm --prefix web run build`.
+- `make build` — Alias for `pio run -e esp32c3-supermini -e esp32c3-supermini-ota`.
+- `make flash` — Alias for USB flash upload.
+- `make ota` — Alias for wireless Wi-Fi upload.
+
+### Windows Agent Execution Guidelines
+- **Windows CLI Encoding:** Always ensure `PYTHONIOENCODING=utf-8` is set when running `pio` commands in Windows CMD or PowerShell (e.g. `cmd /c "set PYTHONIOENCODING=utf-8 && pio run"` or `$env:PYTHONIOENCODING="utf-8"` in PowerShell).
+- **Missing `make` on Windows:** Standard Windows CMD/PowerShell environments do not include GNU `make`. AI agents operating on Windows MUST use `npm run <script>` or direct `pio` / `npm` commands instead of assuming `make` is installed.
+- **PlatformIO Binary Path Resolution:** If `pio` is not found on Windows PATH, check Python/uv script locations:
+  - `%USERPROFILE%\.local\bin\pio.exe`
+  - `%USERPROFILE%\.platformio\penv\Scripts\pio.exe`
+  - Or invoke via `uv tool run platformio run` / `python -m platformio run`.
+
